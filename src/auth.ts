@@ -78,11 +78,23 @@ async function createLoginSession(
   let body: unknown;
   try {
     ({ response, body } = await fetchJson(runtime, apiUrl(runtime.env, "/api/auth/login"), { method: "POST" }));
-  } catch {
-    return { ok: false, result: fail("auth.login", "API_UNREACHABLE", "无法连接 BYRDocs 登录接口。", { retryable: true }) };
+  } catch (error) {
+    return {
+      ok: false,
+      result: fail("auth.login", "API_UNREACHABLE", "无法连接 BYRDocs 登录接口。", {
+        retryable: true,
+        details: { endpoint: apiUrl(runtime.env, "/api/auth/login"), cause: errorMessage(error) }
+      })
+    };
   }
   if (!response.ok) {
-    return { ok: false, result: fail("auth.login", "API_UNREACHABLE", "BYRDocs 登录接口暂时不可用。", { retryable: true }) };
+    return {
+      ok: false,
+      result: fail("auth.login", "API_UNREACHABLE", "BYRDocs 登录接口暂时不可用。", {
+        retryable: true,
+        details: { endpoint: apiUrl(runtime.env, "/api/auth/login"), status: response.status, response: redactAuthBody(asRecord(body)) }
+      })
+    };
   }
   const data = asRecord(body);
   const tokenURL = typeof data.tokenURL === "string" ? data.tokenURL : null;
@@ -146,11 +158,14 @@ async function pollToken(runtime: Runtime, command: string, tokenURL: string, op
     const timeout = setTimeout(() => controller.abort(), remainingMs);
     try {
       ({ response, body } = await fetchJson(runtime, tokenURL, { method: "GET", signal: controller.signal }));
-    } catch {
+    } catch (error) {
       if (controller.signal.aborted) {
-        return fail(command, "LOGIN_TIMEOUT", "等待登录超时，请确认浏览器登录是否完成。", { retryable: true });
+        return fail(command, "LOGIN_TIMEOUT", "等待登录超时，请确认浏览器登录是否完成。", { retryable: true, details: { token_url: tokenURL } });
       }
-      return fail(command, "API_UNREACHABLE", "无法连接 BYRDocs token 轮询接口。", { retryable: true });
+      return fail(command, "API_UNREACHABLE", "无法连接 BYRDocs token 轮询接口。", {
+        retryable: true,
+        details: { token_url: tokenURL, cause: errorMessage(error) }
+      });
     } finally {
       clearTimeout(timeout);
     }
@@ -171,7 +186,7 @@ async function pollToken(runtime: Runtime, command: string, tokenURL: string, op
     }
     await runtime.sleep(options.intervalMs);
   }
-  return fail(command, "LOGIN_TIMEOUT", "等待登录超时，请确认浏览器登录是否完成。", { retryable: true });
+  return fail(command, "LOGIN_TIMEOUT", "等待登录超时，请确认浏览器登录是否完成。", { retryable: true, details: { token_url: tokenURL } });
 }
 
 async function status(runtime: Runtime): Promise<CliResult> {
@@ -240,4 +255,8 @@ function parseWaitOptions(values: Record<string, unknown>, command: string): { t
 
 function redactAuthBody(data: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(Object.entries(data).map(([key, value]) => [key, key.toLowerCase().includes("token") ? "<redacted>" : value]));
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

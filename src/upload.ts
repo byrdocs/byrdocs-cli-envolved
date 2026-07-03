@@ -22,22 +22,22 @@ export async function uploadCommand(runtime: Runtime, args: string[]): Promise<C
   let token: string | null;
   try {
     token = await readToken(runtime.env);
-  } catch {
-    return fail("upload", "CONFIG_READ_FAILED", "无法读取本地 token。");
+  } catch (error) {
+    return fail("upload", "CONFIG_READ_FAILED", "无法读取本地 token。", { details: { cause: errorMessage(error) } });
   }
   if (!token) return fail("upload", "NOT_LOGGED_IN", "请先运行 byrdocs auth login 登录。");
 
   let stat;
   try {
     stat = await fs.stat(inputPath);
-  } catch {
-    return fail("upload", "FILE_NOT_FOUND", "找不到待上传文件。");
+  } catch (error) {
+    return fail("upload", "FILE_NOT_FOUND", "找不到待上传文件。", { details: { input_path: inputPath, cause: errorMessage(error) } });
   }
-  if (!stat.isFile()) return fail("upload", "FILE_NOT_FOUND", "待上传路径不是文件。");
-  if (stat.size > MAX_UPLOAD_SIZE) return fail("upload", "UPLOAD_TOO_LARGE", "文件超过 BYRDocs 当前 2GB 上传限制。");
+  if (!stat.isFile()) return fail("upload", "FILE_NOT_FOUND", "待上传路径不是文件。", { details: { input_path: inputPath } });
+  if (stat.size > MAX_UPLOAD_SIZE) return fail("upload", "UPLOAD_TOO_LARGE", "文件超过 BYRDocs 当前 2GB 上传限制。", { details: { input_path: inputPath, size: stat.size, limit: MAX_UPLOAD_SIZE } });
 
   const ext = path.extname(inputPath).slice(1).toLowerCase();
-  if (!SUPPORTED_EXT.has(ext)) return fail("upload", "UNSUPPORTED_FILE_TYPE", "目前只支持上传 pdf 或 zip 文件。");
+  if (!SUPPORTED_EXT.has(ext)) return fail("upload", "UNSUPPORTED_FILE_TYPE", "目前只支持上传 pdf 或 zip 文件。", { details: { input_path: inputPath, ext } });
 
   const md5 = await fileMd5(inputPath);
   const key = `${md5}.${ext}`;
@@ -58,7 +58,7 @@ export async function uploadCommand(runtime: Runtime, args: string[]): Promise<C
     if (start.code === "FILE_EXISTS") {
       return ok("upload", { ...commonData, status: "exists", deduplicated: true }, `文件已存在：${key}`);
     }
-    return uploadFailure(start.code, start.status);
+    return uploadFailure(start.code, start.status, start.body);
   }
   const uploadId = typeof start.body.uploadId === "string" ? start.body.uploadId : null;
   if (!uploadId) return fail("upload", "UPLOAD_FAILED", "上传初始化返回格式不符合预期。", { retryable: true });
@@ -75,14 +75,14 @@ export async function uploadCommand(runtime: Runtime, args: string[]): Promise<C
       form.set("partNumber", String(partNumber));
       form.set("file", new Blob([partBytes]), `${partNumber}.part`);
       const part = await apiJson(runtime, "/api/r2/mpu-uploadpart", token, { method: "PUT", body: form });
-      if (!part.ok) return uploadFailure(part.code, part.status);
+      if (!part.ok) return uploadFailure(part.code, part.status, part.body);
       const etag = typeof part.body.etag === "string" ? part.body.etag : null;
       if (!etag) return fail("upload", "UPLOAD_FAILED", "上传分片返回格式不符合预期。", { retryable: true });
       parts.push({ partNumber, etag });
       partNumber += 1;
     }
-  } catch {
-    return fail("upload", "UPLOAD_FAILED", "上传文件分片失败。", { retryable: true });
+  } catch (error) {
+    return fail("upload", "UPLOAD_FAILED", "上传文件分片失败。", { retryable: true, details: { input_path: inputPath, cause: errorMessage(error) } });
   }
 
   const complete = await apiJson(runtime, "/api/r2/mpu-complete", token, {
@@ -90,7 +90,7 @@ export async function uploadCommand(runtime: Runtime, args: string[]): Promise<C
     body: JSON.stringify({ key, uploadId, parts }),
     headers: { "content-type": "application/json" }
   });
-  if (!complete.ok) return uploadFailure(complete.code, complete.status);
+  if (!complete.ok) return uploadFailure(complete.code, complete.status, complete.body);
   return ok("upload", { ...commonData, status: "uploaded", deduplicated: false }, `上传完成：${key}`);
 }
 
@@ -132,19 +132,24 @@ async function apiJson(runtime: Runtime, pathname: string, token: string, init: 
       body: record,
       code: typeof record.code === "string" ? record.code : undefined
     };
-  } catch {
-    return { ok: false, status: 0, body: {}, code: "API_UNREACHABLE" };
+  } catch (error) {
+    return { ok: false, status: 0, body: { cause: errorMessage(error) }, code: "API_UNREACHABLE" };
   }
 }
 
-function uploadFailure(code: string | undefined, status: number): CliResult {
-  if (code === "API_UNREACHABLE") return fail("upload", "API_UNREACHABLE", "无法连接 BYRDocs 上传接口。", { retryable: true });
-  if (status === 401 || status === 403) return fail("upload", "TOKEN_INVALID", "上传凭证无效，请重新登录。");
-  if (status === 413) return fail("upload", "UPLOAD_TOO_LARGE", "文件超过 BYRDocs 上传限制。");
-  return fail("upload", "UPLOAD_FAILED", "上传失败，请稍后重试。", { retryable: true, details: code ? { api_code: code } : undefined });
+function uploadFailure(code: string | undefined, status: number, body: Record<string, unknown>): CliResult {
+  const details = { status, ...(code ? { api_code: code } : {}), response: body };
+  if (code === "API_UNREACHABLE") return fail("upload", "API_UNREACHABLE", "无法连接 BYRDocs 上传接口。", { retryable: true, details });
+  if (status === 401 || status === 403) return fail("upload", "TOKEN_INVALID", "上传凭证无效，请重新登录。", { details });
+  if (status === 413) return fail("upload", "UPLOAD_TOO_LARGE", "文件超过 BYRDocs 上传限制。", { details });
+  return fail("upload", "UPLOAD_FAILED", "上传失败，请稍后重试。", { retryable: true, details });
 }
 
 function chunkSizeFromArgs(values: Record<string, unknown>): { ok: true; value: number } | { ok: false; result: CliResult } {
   if (values["chunk-size"] === undefined) return { ok: true, value: DEFAULT_CHUNK_SIZE };
   return positiveInteger(values["chunk-size"], "upload", "--chunk-size");
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

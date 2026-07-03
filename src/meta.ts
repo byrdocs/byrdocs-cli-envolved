@@ -103,8 +103,8 @@ async function init(runtime: Runtime, args: string[]): Promise<CliResult> {
   try {
     await fs.mkdir(path.dirname(path.resolve(out)), { recursive: true });
     await fs.writeFile(out, YAML.stringify(doc), "utf8");
-  } catch {
-    return fail("meta.init", "METADATA_TEMPLATE_FAILED", "无法写入 metadata 模板。");
+  } catch (error) {
+    return fail("meta.init", "METADATA_TEMPLATE_FAILED", "无法写入 metadata 模板。", { details: { output_path: out, cause: errorMessage(error) } });
   }
   return ok(
     "meta.init",
@@ -251,8 +251,8 @@ async function readYaml(file: string, command: string): Promise<{ ok: true; valu
   let raw: string;
   try {
     raw = await fs.readFile(file, "utf8");
-  } catch {
-    return { ok: false, result: fail(command, "CONFIG_READ_FAILED", "无法读取 YAML 文件。") };
+  } catch (error) {
+    return { ok: false, result: fail(command, "CONFIG_READ_FAILED", "无法读取 YAML 文件。", { details: { path: file, cause: errorMessage(error) } }) };
   }
   const doc = YAML.parseDocument(raw);
   if (doc.errors.length) {
@@ -317,7 +317,8 @@ async function loadSchema(runtime: Runtime, type: MetaType): Promise<{ info: Sch
         {
           code: "SCHEMA_REMOTE_UNAVAILABLE",
           message: "无法获取最新 metadata schema，已使用内置兜底 schema。",
-          details: error instanceof Error ? error.message : String(error)
+          details: errorMessage(error),
+          suggestions: ["稍后重试以获取最新 schema。", "如果正在离线工作，可以先按兜底 schema 修改，提交前再重新 validate。"]
         }
       ]
     };
@@ -392,6 +393,10 @@ function stringArray(value: unknown): string[] {
 
 function isMetaType(value: unknown): value is MetaType {
   return value === "book" || value === "doc" || value === "test";
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function optionValue(args: string[], name: string): string | null {

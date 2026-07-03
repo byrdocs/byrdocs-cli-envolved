@@ -164,6 +164,13 @@ test("invalid command options fail instead of being ignored or treated as positi
   assert.equal(badLimit.code, 1);
   assert.equal(badLimit.json.error.code, "INVALID_ARGUMENT");
   assert.deepEqual(badLimit.json.error.details, { option: "--limit", received: "nope" });
+  assert.ok(badLimit.json.error.suggestions.some((item) => item.includes("help")));
+
+  const badLimitText = await runCliText(["search", "高等数学", "--limit", "nope"]);
+  assert.equal(badLimitText.code, 1);
+  assert.match(badLimitText.stdout, /错误\(INVALID_ARGUMENT\)/);
+  assert.match(badLimitText.stdout, /详情：/);
+  assert.match(badLimitText.stdout, /建议：/);
 
   const missingLimit = await runCli(["search", "高等数学", "--limit", "--json"]);
   assert.equal(missingLimit.code, 1);
@@ -393,6 +400,28 @@ async function runCli(args, options = {}) {
     sleep: async () => {}
   });
   return { code, stdout, stderr, json: JSON.parse(stdout) };
+}
+
+async function runCliText(args, options = {}) {
+  let stdout = "";
+  let stderr = "";
+  const dir = options.dir || (await tempDir());
+  const env = {
+    ...process.env,
+    BYRDOCS_CONFIG_DIR: dir,
+    BYRDOCS_API_BASE: "https://byrdocs.test",
+    BYRDOCS_SEARCH_URL: "https://search.byrdocs.test/api/search",
+    ...(options.env || {})
+  };
+  const code = await run(args, {
+    stdout: { write: (text) => (stdout += String(text)) },
+    stderr: { write: (text) => (stderr += String(text)) },
+    env,
+    cwd: dir,
+    fetch: options.fetch || (async () => jsonResponse({ success: true })),
+    sleep: async () => {}
+  });
+  return { code, stdout, stderr };
 }
 
 async function tempDir() {
