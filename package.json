@@ -1,6 +1,6 @@
 {
   "name": "@byrdocs/cli",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Agent-oriented BYRDocs contribution CLI",
   "type": "module",
   "license": "MIT",
