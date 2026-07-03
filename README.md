@@ -3,7 +3,28 @@
 面向 Agent 的 BYRDocs 贡献命令行工具，用于把登录、上传、下载、
 metadata 和搜索这些步骤做成稳定的脚本接口。
 
-## 使用
+## 安装
+
+临时运行：
+
+```bash
+npx -y @byrdocs/cli help
+```
+
+长期使用：
+
+```bash
+npm install -g @byrdocs/cli
+byrdocs help
+```
+
+安装 Skill：
+
+```bash
+npx -y skills add byrdocs/byrdocs-cli-envolved -g -y
+```
+
+## 开发
 
 ```bash
 npm install
@@ -38,3 +59,11 @@ node dist/cli.js search "keyword"
 ## 包信息
 
 npm 包会暴露 `byrdocs` 命令，需要 Node.js 20 或更高版本。
+
+发布由 GitHub Actions 在 `v*.*.*` tag 上触发。发布前用 npm 更新版本，
+再把版本提交和 tag 一起推送：
+
+```bash
+npm version patch
+git push origin master --follow-tags
+```
