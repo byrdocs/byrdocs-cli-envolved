@@ -1,9 +1,11 @@
 import type { Runtime } from "./config.js";
+import { parseCommandArgs, positiveInteger } from "./args.js";
 import { asRecord, fetchJson, searchEndpoint } from "./http.js";
 import { fail, ok, type CliResult } from "./output.js";
 
 export async function searchCommand(runtime: Runtime, args: string[]): Promise<CliResult> {
   const options = parseSearchArgs(args);
+  if (!options.ok) return options.result;
   if (!options.query) return fail("search", "INVALID_ARGUMENT", "缺少搜索关键词。");
   let response: Response;
   let body: unknown;
@@ -26,21 +28,11 @@ export async function searchCommand(runtime: Runtime, args: string[]): Promise<C
   return ok("search", { query: options.query, limit: options.limit, ...(options.type ? { type: options.type } : {}), results }, `找到 ${results.length} 条结果。`);
 }
 
-function parseSearchArgs(args: string[]): { query: string; limit: number; type?: string } {
-  let limit = 10;
-  let type: string | undefined;
-  const query: string[] = [];
-  for (let i = 0; i < args.length; i += 1) {
-    if (args[i] === "--limit" && args[i + 1]) {
-      const parsed = Number(args[i + 1]);
-      limit = Number.isFinite(parsed) && parsed > 0 ? parsed : limit;
-      i += 1;
-    } else if (args[i] === "--type" && args[i + 1]) {
-      type = args[i + 1];
-      i += 1;
-    } else {
-      query.push(args[i]);
-    }
-  }
-  return { query: query.join(" "), limit, type };
+function parseSearchArgs(args: string[]): { ok: true; query: string; limit: number; type?: string } | { ok: false; result: CliResult } {
+  const parsed = parseCommandArgs("search", args, { limit: { type: "string" }, type: { type: "string" } });
+  if (!parsed.ok) return parsed;
+  const limit = parsed.parsed.values.limit === undefined ? { ok: true as const, value: 10 } : positiveInteger(parsed.parsed.values.limit, "search", "--limit");
+  if (!limit.ok) return limit;
+  const type = typeof parsed.parsed.values.type === "string" ? parsed.parsed.values.type : undefined;
+  return { ok: true, query: parsed.parsed.positionals.join(" "), limit: limit.value, type };
 }

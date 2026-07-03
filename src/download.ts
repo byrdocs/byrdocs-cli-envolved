@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { parseCommandArgs } from "./args.js";
 import { decodeJwtPayload } from "./auth.js";
 import { readToken, type Runtime } from "./config.js";
 import { parseFileRef } from "./file-ref.js";
@@ -7,9 +8,12 @@ import { apiUrl, asRecord, responseJson } from "./http.js";
 import { fail, ok, type CliResult } from "./output.js";
 
 export async function downloadCommand(runtime: Runtime, args: string[]): Promise<CliResult> {
-  const input = args[0];
-  const output = optionValue(args, "--output");
+  const parsed = parseCommandArgs("download", args, { output: { type: "string" } });
+  if (!parsed.ok) return parsed.result;
+  const input = parsed.parsed.positionals[0];
+  const output = typeof parsed.parsed.values.output === "string" ? parsed.parsed.values.output : null;
   if (!input) return fail("download", "INVALID_ARGUMENT", "缺少文件引用。");
+  if (parsed.parsed.positionals.length > 1) return fail("download", "INVALID_ARGUMENT", "download 只接受一个文件引用。");
   if (!output) return fail("download", "OUTPUT_PATH_REQUIRED", "下载必须使用 --output 指定写入路径。");
   const ref = parseFileRef(input);
   if (!ref) return fail("download", "INVALID_FILE_REF", "文件引用格式不正确。");
@@ -59,9 +63,4 @@ export async function downloadCommand(runtime: Runtime, args: string[]): Promise
     return fail("download", "OUTPUT_WRITE_FAILED", "无法写入输出文件。");
   }
   return ok("download", { key: ref.key, output_path: output }, `已下载到：${output}`);
-}
-
-function optionValue(args: string[], name: string): string | null {
-  const index = args.indexOf(name);
-  return index === -1 ? null : args[index + 1] ?? null;
 }

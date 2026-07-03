@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { pathToFileURL } from "node:url";
 import { authCommand } from "./auth.js";
+import { parseGlobalFlags } from "./args.js";
 import { defaultRuntime, type Runtime } from "./config.js";
 import { doctorCommand } from "./doctor.js";
 import { downloadCommand } from "./download.js";
@@ -10,7 +11,12 @@ import { searchCommand } from "./search.js";
 import { uploadCommand } from "./upload.js";
 
 export async function run(argv = process.argv.slice(2), runtime: Runtime = defaultRuntime()): Promise<number> {
-  const { json, help, args } = extractGlobalFlags(argv, runtime.env);
+  const parsed = parseGlobalFlags(argv, runtime.env);
+  if (!parsed.ok) {
+    writeResult(runtime, parsed.result, parsed.json);
+    return parsed.result.exitCode;
+  }
+  const { json, help, args } = parsed;
   const result = await Promise.resolve(help ? helpCommand(args) : dispatch(runtime, args)).catch((error: unknown) =>
     fail("unknown", "UNKNOWN_ERROR", "命令执行失败。", { details: error instanceof Error ? error.message : String(error) })
   );
@@ -28,28 +34,6 @@ async function dispatch(runtime: Runtime, args: string[]): Promise<CliResult> {
   if (command === "meta") return metaCommand(runtime, args.slice(1));
   if (command === "search") return searchCommand(runtime, args.slice(1));
   return fail(command, "INVALID_ARGUMENT", "未知命令。");
-}
-
-function extractGlobalFlags(argv: string[], env: NodeJS.ProcessEnv): { json: boolean; help: boolean; args: string[] } {
-  let json = false;
-  let help = false;
-  const args: string[] = [];
-  for (let i = 0; i < argv.length; i += 1) {
-    if (argv[i] === "--json") {
-      json = true;
-    } else if (argv[i] === "--help" || argv[i] === "-h") {
-      help = true;
-    } else if (argv[i] === "--api-base" && argv[i + 1]) {
-      env.BYRDOCS_API_BASE = argv[i + 1];
-      i += 1;
-    } else if (argv[i] === "--search-url" && argv[i + 1]) {
-      env.BYRDOCS_SEARCH_URL = argv[i + 1];
-      i += 1;
-    } else {
-      args.push(argv[i]);
-    }
-  }
-  return { json, help, args };
 }
 
 function helpCommand(args: string[]): CliResult {

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { parseCommandArgs, positiveInteger } from "./args.js";
 import { readToken, type Runtime } from "./config.js";
 import { apiUrl, asRecord, fetchJson } from "./http.js";
 import { fail, ok, type CliResult } from "./output.js";
@@ -11,8 +12,13 @@ const DEFAULT_CHUNK_SIZE = 5 * 1024 * 1024;
 const MAX_UPLOAD_SIZE = 2 * 1024 * 1024 * 1024;
 
 export async function uploadCommand(runtime: Runtime, args: string[]): Promise<CliResult> {
-  const inputPath = args[0];
+  const parsed = parseCommandArgs("upload", args, { "chunk-size": { type: "string" } });
+  if (!parsed.ok) return parsed.result;
+  const inputPath = parsed.parsed.positionals[0];
   if (!inputPath) return fail("upload", "INVALID_ARGUMENT", "缺少待上传文件路径。");
+  if (parsed.parsed.positionals.length > 1) return fail("upload", "INVALID_ARGUMENT", "upload 只接受一个文件路径。");
+  const chunkSize = chunkSizeFromArgs(parsed.parsed.values);
+  if (!chunkSize.ok) return chunkSize.result;
   let token: string | null;
   try {
     token = await readToken(runtime.env);
@@ -57,11 +63,10 @@ export async function uploadCommand(runtime: Runtime, args: string[]): Promise<C
   const uploadId = typeof start.body.uploadId === "string" ? start.body.uploadId : null;
   if (!uploadId) return fail("upload", "UPLOAD_FAILED", "上传初始化返回格式不符合预期。", { retryable: true });
 
-  const chunkSize = chunkSizeFromArgs(args);
   const parts: Array<{ partNumber: number; etag: string }> = [];
   let partNumber = 1;
   try {
-    for await (const chunk of fileChunks(inputPath, chunkSize)) {
+    for await (const chunk of fileChunks(inputPath, chunkSize.value)) {
       const form = new FormData();
       const partBytes = new Uint8Array(chunk.byteLength);
       partBytes.set(chunk);
@@ -139,9 +144,7 @@ function uploadFailure(code: string | undefined, status: number): CliResult {
   return fail("upload", "UPLOAD_FAILED", "上传失败，请稍后重试。", { retryable: true, details: code ? { api_code: code } : undefined });
 }
 
-function chunkSizeFromArgs(args: string[]): number {
-  const index = args.indexOf("--chunk-size");
-  if (index === -1 || !args[index + 1]) return DEFAULT_CHUNK_SIZE;
-  const parsed = Number(args[index + 1]);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CHUNK_SIZE;
+function chunkSizeFromArgs(values: Record<string, unknown>): { ok: true; value: number } | { ok: false; result: CliResult } {
+  if (values["chunk-size"] === undefined) return { ok: true, value: DEFAULT_CHUNK_SIZE };
+  return positiveInteger(values["chunk-size"], "upload", "--chunk-size");
 }

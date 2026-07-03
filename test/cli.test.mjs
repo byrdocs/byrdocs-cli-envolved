@@ -122,6 +122,22 @@ test("--json writes one envelope to stdout and keeps stderr empty for stable com
   assert.equal(failed.json.data, undefined);
 });
 
+test("invalid command options fail instead of being ignored or treated as positionals", async () => {
+  const badLimit = await runCli(["search", "高等数学", "--limit", "nope", "--json"]);
+  assert.equal(badLimit.code, 1);
+  assert.equal(badLimit.json.error.code, "INVALID_ARGUMENT");
+  assert.deepEqual(badLimit.json.error.details, { option: "--limit", received: "nope" });
+
+  const missingLimit = await runCli(["search", "高等数学", "--limit", "--json"]);
+  assert.equal(missingLimit.code, 1);
+  assert.equal(missingLimit.json.error.code, "INVALID_ARGUMENT");
+
+  const badChunkSize = await runCli(["upload", "file.pdf", "--chunk-size", "nope", "--json"]);
+  assert.equal(badChunkSize.code, 1);
+  assert.equal(badChunkSize.json.error.code, "INVALID_ARGUMENT");
+  assert.deepEqual(badChunkSize.json.error.details, { option: "--chunk-size", received: "nope" });
+});
+
 test("help command and --help return usage successfully", async () => {
   const main = await runCli(["help", "--json"]);
   assert.equal(main.code, 0);

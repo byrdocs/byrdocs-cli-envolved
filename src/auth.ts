@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { parseCommandArgs, positiveNumber } from "./args.js";
 import { clearAuthFiles, readSession, readToken, saveSession, writeToken, type Runtime } from "./config.js";
 import { apiUrl, asRecord, fetchJson } from "./http.js";
 import { fail, ok, type CliResult } from "./output.js";
@@ -51,7 +52,9 @@ export async function authCommand(runtime: Runtime, args: string[]): Promise<Cli
 }
 
 async function login(runtime: Runtime, args: string[]): Promise<CliResult> {
-  if (args.length) return fail("auth.login", "INVALID_ARGUMENT", "auth login 不接受额外参数，请使用 auth login 后再 auth wait。");
+  const parsed = parseCommandArgs("auth.login", args);
+  if (!parsed.ok) return parsed.result;
+  if (parsed.parsed.positionals.length) return fail("auth.login", "INVALID_ARGUMENT", "auth login 不接受额外参数，请使用 auth login 后再 auth wait。");
 
   let response: Response;
   let body: unknown;
@@ -88,9 +91,17 @@ async function login(runtime: Runtime, args: string[]): Promise<CliResult> {
 }
 
 async function wait(runtime: Runtime, args: string[]): Promise<CliResult> {
-  const sessionId = args[0];
+  const parsed = parseCommandArgs("auth.wait", args, {
+    timeout: { type: "string" },
+    "timeout-seconds": { type: "string" },
+    "interval-ms": { type: "string" }
+  });
+  if (!parsed.ok) return parsed.result;
+  const sessionId = parsed.parsed.positionals[0];
   if (!sessionId) return fail("auth.wait", "INVALID_ARGUMENT", "缺少 session-id。");
-  const options = parseWaitOptions(args.slice(1));
+  if (parsed.parsed.positionals.length > 1) return fail("auth.wait", "INVALID_ARGUMENT", "auth wait 只接受一个 session-id。");
+  const options = parseWaitOptions(parsed.parsed.values);
+  if ("exitCode" in options) return options;
   let session;
   try {
     session = await readSession(runtime.env, sessionId);
@@ -184,17 +195,19 @@ function extractToken(data: Record<string, unknown>): string | null {
   return null;
 }
 
-function parseWaitOptions(args: string[]): { timeoutMs: number; intervalMs: number } {
+function parseWaitOptions(values: Record<string, unknown>): { timeoutMs: number; intervalMs: number } | CliResult {
   let timeoutMs = 180_000;
   let intervalMs = 2_000;
-  for (let i = 0; i < args.length; i += 1) {
-    if ((args[i] === "--timeout" || args[i] === "--timeout-seconds") && args[i + 1]) {
-      timeoutMs = Math.max(0, Number(args[i + 1]) * 1000);
-      i += 1;
-    } else if (args[i] === "--interval-ms" && args[i + 1]) {
-      intervalMs = Math.max(0, Number(args[i + 1]));
-      i += 1;
-    }
+  const timeout = values["timeout-seconds"] ?? values.timeout;
+  if (timeout !== undefined) {
+    const parsed = positiveNumber(timeout, "auth.wait", "--timeout-seconds");
+    if (!parsed.ok) return parsed.result;
+    timeoutMs = parsed.value * 1000;
+  }
+  if (values["interval-ms"] !== undefined) {
+    const parsed = positiveNumber(values["interval-ms"], "auth.wait", "--interval-ms");
+    if (!parsed.ok) return parsed.result;
+    intervalMs = parsed.value;
   }
   return { timeoutMs, intervalMs };
 }
