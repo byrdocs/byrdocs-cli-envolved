@@ -237,6 +237,78 @@ test("meta init, validate, preview and YAML parse errors", async () => {
   assert.equal(parse.json.error.code, "YAML_PARSE_ERROR");
 });
 
+test("meta schema prefers remote schema and validates against latest required fields", async () => {
+  const dir = await tempDir();
+  const md5 = "e4d909c290d0fb1ca068ffaddf22cbd0";
+  const fetch = async (url) => {
+    assert.match(String(url), /\/schema\/test\.yaml$/);
+    return textResponse(`type: object
+properties:
+  id:
+    type: string
+  url:
+    type: string
+  type:
+    type: string
+    enum: [test]
+  data:
+    type: object
+    properties:
+      course:
+        type: object
+        properties:
+          name:
+            type: string
+        required: [name]
+      time:
+        type: object
+        properties:
+          start:
+            type: string
+          end:
+            type: string
+        required: [start, end]
+      filetype:
+        type: string
+        enum: [pdf]
+      content:
+        type: array
+        items:
+          type: string
+    required: [course, time, filetype, content]
+required: [id, url, type, data]
+`);
+  };
+
+  const schema = await runCli(["meta", "schema", "--type", "test", "--json"], { dir, fetch });
+  assert.equal(schema.code, 0);
+  assert.equal(schema.json.data.source, "remote");
+  assert.ok(schema.json.data.required.includes("$.data.time.start"));
+  assert.equal(schema.json.data.required.includes("$.data.filesize"), false);
+
+  const yaml = path.join(dir, `${md5}.yaml`);
+  await writeFile(
+    yaml,
+    `type: test
+id: ${md5}
+url: https://byrdocs.org/files/${md5}.pdf
+data:
+  course:
+    name: 高等数学A（上）
+  time:
+    start: "2024"
+    end: "2025"
+  filetype: pdf
+  content:
+    - 原题
+`,
+    "utf8"
+  );
+  const valid = await runCli(["meta", "validate", yaml, "--json"], { dir, fetch });
+  assert.equal(valid.code, 0);
+  assert.equal(valid.json.data.schema_source, "remote");
+});
+
 test("search posts keyword, limit and optional type", async () => {
   const result = await runCli(["search", "高等数学", "--limit", "2", "--type", "book", "--json"], {
     fetch: async (_url, init) => {
@@ -288,5 +360,12 @@ function jsonResponse(body, init = {}) {
   return new Response(JSON.stringify(body), {
     status: init.status || 200,
     headers: { "content-type": "application/json" }
+  });
+}
+
+function textResponse(body, init = {}) {
+  return new Response(body, {
+    status: init.status || 200,
+    headers: { "content-type": "text/yaml" }
   });
 }

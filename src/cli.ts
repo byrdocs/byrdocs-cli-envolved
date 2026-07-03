@@ -25,7 +25,7 @@ async function dispatch(runtime: Runtime, args: string[]): Promise<CliResult> {
   if (command === "auth") return authCommand(runtime, args.slice(1));
   if (command === "upload") return uploadCommand(runtime, args.slice(1));
   if (command === "download") return downloadCommand(runtime, args.slice(1));
-  if (command === "meta") return metaCommand(args.slice(1));
+  if (command === "meta") return metaCommand(runtime, args.slice(1));
   if (command === "search") return searchCommand(runtime, args.slice(1));
   return fail(command, "INVALID_ARGUMENT", "未知命令。");
 }
@@ -170,7 +170,7 @@ file-ref 支持 32 位 md5、<md5>.pdf|zip、https://byrdocs.org/files/<key>。�
     text: `用法：byrdocs meta <schema|init|validate|preview> [args] [--json]
 
 子命令：
-  meta schema [--type book|doc|test]       查看内置 metadata schema
+  meta schema [--type book|doc|test]       查看 metadata schema（远程优先，本地兜底）
   meta init <file-ref> --type <type> --out <path>
                                            生成 YAML 模板
   meta validate <yaml>                     校验 YAML
