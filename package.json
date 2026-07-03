@@ -3,6 +3,15 @@
   "version": "0.1.0",
   "description": "Agent-oriented BYRDocs contribution CLI",
   "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/byrdocs/byrdocs-cli-envolved.git"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "bin": {
     "byrdocs": "./dist/cli.js"
   },
