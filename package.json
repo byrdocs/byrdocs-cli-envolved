@@ -1,0 +1,28 @@
+{
+  "name": "@byrdocs/cli",
+  "version": "0.1.0",
+  "description": "Agent-oriented BYRDocs contribution CLI",
+  "type": "module",
+  "bin": {
+    "byrdocs": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "prepack": "npm run build"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "yaml": "^2.5.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "typescript": "^5.5.3"
+  }
+}
