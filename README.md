@@ -21,7 +21,7 @@ byrdocs help
 安装 Skill：
 
 ```bash
-npx -y skills add byrdocs/byrdocs-cli-envolved -g -y
+npx skills add byrdocs/byrdocs-cli-envolved
 ```
 
 ## 开发
