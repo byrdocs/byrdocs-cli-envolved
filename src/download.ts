@@ -4,7 +4,7 @@ import { parseCommandArgs } from "./args.js";
 import { decodeJwtPayload } from "./auth.js";
 import { readToken, type Runtime } from "./config.js";
 import { parseFileRef } from "./file-ref.js";
-import { apiUrl, asRecord, responseJson } from "./http.js";
+import { apiUrl, responseJson } from "./http.js";
 import { fail, ok, type CliResult } from "./output.js";
 
 export async function downloadCommand(runtime: Runtime, args: string[]): Promise<CliResult> {
@@ -28,41 +28,21 @@ export async function downloadCommand(runtime: Runtime, args: string[]): Promise
   const claims = decodeJwtPayload(token);
   if (!claims?.download) return fail("download", "BUPT_LOGIN_REQUIRED", "当前 token 没有下载权限，请使用 BUPT 统一认证登录。");
 
+  const url = downloadUrl(runtime, ref.key);
   let response: Response;
   try {
-    response = await runtime.fetch(apiUrl(runtime.env, `/files/${encodeURIComponent(ref.key)}?f=3`), {
+    response = await runtime.fetch(url, {
       headers: { authorization: `Bearer ${token}` }
     });
   } catch (error) {
     return fail("download", "API_UNREACHABLE", "无法连接 BYRDocs 下载接口。", {
       retryable: true,
-      details: { url: apiUrl(runtime.env, `/files/${encodeURIComponent(ref.key)}?f=3`), cause: errorMessage(error) }
+      details: { url, cause: errorMessage(error) }
     });
   }
-  if (response.status === 404) return fail("download", "DOWNLOAD_NOT_FOUND", "文件不存在。", { details: { key: ref.key, status: response.status } });
-  if (response.status === 401) return fail("download", "TOKEN_INVALID", "下载凭证无效，请重新登录。", { details: { key: ref.key, status: response.status } });
-  if (response.status === 403) return fail("download", "DOWNLOAD_FORBIDDEN", "当前账号无权下载该文件。", { details: { key: ref.key, status: response.status } });
-  if (!response.ok) {
-    const body = await responseJson(response);
-    return fail("download", response.status >= 500 ? "API_UNREACHABLE" : "DOWNLOAD_FORBIDDEN", "下载失败。", {
-      retryable: response.status >= 500,
-      details: { key: ref.key, status: response.status, response: body }
-    });
-  }
-  if (response.headers.get("content-type")?.includes("application/json")) {
-    const body = asRecord(await responseJson(response));
-    if (body.success === false) {
-      const message = typeof body.error === "string" ? body.error : "下载失败。";
-      if (message.includes("Not Found") || message.includes("不存在")) {
-        return fail("download", "DOWNLOAD_NOT_FOUND", "文件不存在。", { details: body });
-      }
-      if (message.includes("未授权") || message.includes("Token")) {
-        return fail("download", "DOWNLOAD_FORBIDDEN", "当前账号无权下载该文件。", { details: body });
-      }
-      return fail("download", "DOWNLOAD_FORBIDDEN", message, { details: body });
-    }
-    return fail("download", "DOWNLOAD_FORBIDDEN", "下载接口返回了非文件响应。", { details: body });
-  }
+  const failure = await downloadFailure(response, ref.key, url);
+  if (failure) return failure;
+
   try {
     await fs.mkdir(path.dirname(path.resolve(output)), { recursive: true });
     await fs.writeFile(output, Buffer.from(await response.arrayBuffer()));
@@ -70,6 +50,33 @@ export async function downloadCommand(runtime: Runtime, args: string[]): Promise
     return fail("download", "OUTPUT_WRITE_FAILED", "无法写入输出文件。", { details: { output_path: output, cause: errorMessage(error) } });
   }
   return ok("download", { key: ref.key, output_path: output }, `已下载到：${output}`);
+}
+
+function downloadUrl(runtime: Runtime, key: string): string {
+  return apiUrl(runtime.env, `/files/${encodeURIComponent(key)}?f=3`);
+}
+
+async function downloadFailure(response: Response, key: string, url: string): Promise<CliResult | null> {
+  if (response.status === 401) {
+    return fail("download", "DOWNLOAD_UNAUTHORIZED", "主站拒绝了本次下载请求，请重新使用 BUPT 统一认证登录。", {
+      details: { key, url, status: response.status, response: await responseJson(response) }
+    });
+  }
+  if (response.status === 404) {
+    return fail("download", "DOWNLOAD_NOT_FOUND", "文件不存在。", { details: { key, url, status: response.status, response: await response.text() } });
+  }
+  if (!response.ok) {
+    return fail("download", "DOWNLOAD_FAILED", "下载请求失败。", {
+      retryable: response.status >= 500 || response.status === 429 || response.status === 408,
+      details: { key, url, status: response.status, response: await responseJson(response) }
+    });
+  }
+  if (response.headers.get("content-type")?.includes("application/json")) {
+    return fail("download", "DOWNLOAD_FAILED", "下载接口返回了 JSON，而不是文件内容。", {
+      details: { key, url, status: response.status, response: await responseJson(response) }
+    });
+  }
+  return null;
 }
 
 function errorMessage(error: unknown): string {

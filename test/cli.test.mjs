@@ -245,7 +245,7 @@ test("download distinguishes missing token and token without download capability
   assert.equal(called, false);
 });
 
-test("download uses site file route and refuses JSON error bodies", async () => {
+test("download uses site file route and maps site responses", async () => {
   const dir = await tempDir();
   await saveToken(dir, jwt({ id: "BUPT-1", download: true }));
   const key = "e4d909c290d0fb1ca068ffaddf22cbd0.pdf";
@@ -262,13 +262,34 @@ test("download uses site file route and refuses JSON error bodies", async () => 
   assert.match(seenUrl, /\/files\/e4d909c290d0fb1ca068ffaddf22cbd0\.pdf\?f=3$/);
   assert.equal(await readFile(output, "utf8"), "pdf-body");
 
+  const unauthorizedOutput = path.join(dir, "unauthorized.pdf");
+  const unauthorized = await runCli(["download", key, "--output", unauthorizedOutput, "--json"], {
+    dir,
+    fetch: async () => jsonResponse({ error: "未授权，请登录后重试", success: false }, { status: 401 })
+  });
+  assert.equal(unauthorized.code, 1);
+  assert.equal(unauthorized.json.error.code, "DOWNLOAD_UNAUTHORIZED");
+  assert.equal(unauthorized.json.error.details.status, 401);
+  await assert.rejects(access(unauthorizedOutput));
+
+  const missingOutput = path.join(dir, "missing.pdf");
+  const missing = await runCli(["download", key, "--output", missingOutput, "--json"], {
+    dir,
+    fetch: async () => new Response("Object Not Found", { status: 404 })
+  });
+  assert.equal(missing.code, 1);
+  assert.equal(missing.json.error.code, "DOWNLOAD_NOT_FOUND");
+  assert.equal(missing.json.error.details.response, "Object Not Found");
+  await assert.rejects(access(missingOutput));
+
   const jsonOutput = path.join(dir, "json-error.pdf");
   const jsonError = await runCli(["download", key, "--output", jsonOutput, "--json"], {
     dir,
     fetch: async () => jsonResponse({ error: "API Not Found", success: false })
   });
   assert.equal(jsonError.code, 1);
-  assert.equal(jsonError.json.error.code, "DOWNLOAD_NOT_FOUND");
+  assert.equal(jsonError.json.error.code, "DOWNLOAD_FAILED");
+  assert.equal(jsonError.json.error.message, "下载接口返回了 JSON，而不是文件内容。");
   await assert.rejects(access(jsonOutput));
 });
 

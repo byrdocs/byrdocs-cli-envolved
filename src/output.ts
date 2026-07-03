@@ -128,8 +128,12 @@ function defaultSuggestions(code: string): string[] {
       return ["稍后重试上传。", "如果重复失败，运行 byrdocs doctor 检查服务连通性。"];
     case "DOWNLOAD_NOT_FOUND":
       return ["检查 file-ref、md5 或文件 URL 是否正确。", "先用 byrdocs search 搜索确认资料是否存在。"];
+    case "DOWNLOAD_UNAUTHORIZED":
+      return ["重新运行 byrdocs auth login，并使用 BUPT 统一认证登录。", "如果刚登录过，运行 byrdocs auth status 检查本地 token。"];
     case "DOWNLOAD_FORBIDDEN":
       return ["确认当前账号有下载权限。", "必要时重新使用 BUPT 统一认证登录。"];
+    case "DOWNLOAD_FAILED":
+      return ["稍后重试下载。", "如果重复失败，运行 byrdocs doctor 检查服务连通性。"];
     case "INVALID_FILE_REF":
       return ["使用 32 位 md5、<md5>.pdf、<md5>.zip 或 https://byrdocs.org/files/<key>。"];
     case "SCHEMA_NOT_FOUND":
