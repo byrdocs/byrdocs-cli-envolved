@@ -52,41 +52,63 @@ export async function authCommand(runtime: Runtime, args: string[]): Promise<Cli
 }
 
 async function login(runtime: Runtime, args: string[]): Promise<CliResult> {
-  const parsed = parseCommandArgs("auth.login", args);
+  const parsed = parseCommandArgs("auth.login", args, {
+    "no-wait": { type: "boolean" },
+    timeout: { type: "string" },
+    "timeout-seconds": { type: "string" },
+    "interval-ms": { type: "string" }
+  });
   if (!parsed.ok) return parsed.result;
-  if (parsed.parsed.positionals.length) return fail("auth.login", "INVALID_ARGUMENT", "auth login 不接受额外参数，请使用 auth login 后再 auth wait。");
+  if (parsed.parsed.positionals.length) return fail("auth.login", "INVALID_ARGUMENT", "auth login 不接受额外位置参数。");
+  const options = parseWaitOptions(parsed.parsed.values, "auth.login");
+  if ("exitCode" in options) return options;
 
+  const session = await createLoginSession(runtime);
+  if (!session.ok) return session.result;
+  const started = loginStartedResult(session);
+  if (parsed.parsed.values["no-wait"] === true) return started;
+  runtime.stderr.write(`请在浏览器打开登录链接：\n${session.loginURL}\n正在等待网页登录完成...\n`);
+  return pollToken(runtime, "auth.login", session.tokenURL, options);
+}
+
+async function createLoginSession(
+  runtime: Runtime
+): Promise<{ ok: true; loginURL: string; tokenURL: string; sessionId: string } | { ok: false; result: CliResult }> {
   let response: Response;
   let body: unknown;
   try {
     ({ response, body } = await fetchJson(runtime, apiUrl(runtime.env, "/api/auth/login"), { method: "POST" }));
   } catch {
-    return fail("auth.login", "API_UNREACHABLE", "无法连接 BYRDocs 登录接口。", { retryable: true });
+    return { ok: false, result: fail("auth.login", "API_UNREACHABLE", "无法连接 BYRDocs 登录接口。", { retryable: true }) };
   }
   if (!response.ok) {
-    return fail("auth.login", "API_UNREACHABLE", "BYRDocs 登录接口暂时不可用。", { retryable: true });
+    return { ok: false, result: fail("auth.login", "API_UNREACHABLE", "BYRDocs 登录接口暂时不可用。", { retryable: true }) };
   }
   const data = asRecord(body);
   const tokenURL = typeof data.tokenURL === "string" ? data.tokenURL : null;
   const loginURL = typeof data.loginURL === "string" ? data.loginURL : null;
   if (!tokenURL || !loginURL) {
-    return fail("auth.login", "UNKNOWN_ERROR", "登录接口返回格式不符合预期。", { details: { response: redactAuthBody(data) } });
+    return { ok: false, result: fail("auth.login", "UNKNOWN_ERROR", "登录接口返回格式不符合预期。", { details: { response: redactAuthBody(data) } }) };
   }
   const sessionId = `login_${randomUUID().replaceAll("-", "")}`;
   try {
     await saveSession(runtime.env, sessionId, { tokenURL, created_at: new Date().toISOString() });
   } catch {
-    return fail("auth.login", "CONFIG_WRITE_FAILED", "无法保存本地登录会话。");
+    return { ok: false, result: fail("auth.login", "CONFIG_WRITE_FAILED", "无法保存本地登录会话。") };
   }
+  return { ok: true, loginURL, tokenURL, sessionId };
+}
+
+function loginStartedResult(session: { loginURL: string; sessionId: string }): CliResult {
   return ok(
     "auth.login",
     {
       status: "user_action_required",
-      login_url: loginURL,
-      session_id: sessionId,
-      poll_command: `byrdocs auth wait ${sessionId} --json`
+      login_url: session.loginURL,
+      session_id: session.sessionId,
+      poll_command: `byrdocs auth wait ${session.sessionId} --json`
     },
-    `请在浏览器打开登录链接：\n${loginURL}\n然后运行：byrdocs auth wait ${sessionId}`
+    `请在浏览器打开登录链接：\n${session.loginURL}\n然后运行：byrdocs auth wait ${session.sessionId}`
   );
 }
 
@@ -100,7 +122,7 @@ async function wait(runtime: Runtime, args: string[]): Promise<CliResult> {
   const sessionId = parsed.parsed.positionals[0];
   if (!sessionId) return fail("auth.wait", "INVALID_ARGUMENT", "缺少 session-id。");
   if (parsed.parsed.positionals.length > 1) return fail("auth.wait", "INVALID_ARGUMENT", "auth wait 只接受一个 session-id。");
-  const options = parseWaitOptions(parsed.parsed.values);
+  const options = parseWaitOptions(parsed.parsed.values, "auth.wait");
   if ("exitCode" in options) return options;
   let session;
   try {
@@ -110,6 +132,10 @@ async function wait(runtime: Runtime, args: string[]): Promise<CliResult> {
   }
   if (!session) return fail("auth.wait", "LOGIN_SESSION_NOT_FOUND", "本地登录会话不存在或已失效。");
 
+  return pollToken(runtime, "auth.wait", session.tokenURL, options);
+}
+
+async function pollToken(runtime: Runtime, command: string, tokenURL: string, options: { timeoutMs: number; intervalMs: number }): Promise<CliResult> {
   const deadline = Date.now() + options.timeoutMs;
   while (Date.now() <= deadline) {
     let response: Response;
@@ -119,12 +145,12 @@ async function wait(runtime: Runtime, args: string[]): Promise<CliResult> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), remainingMs);
     try {
-      ({ response, body } = await fetchJson(runtime, session.tokenURL, { method: "GET", signal: controller.signal }));
+      ({ response, body } = await fetchJson(runtime, tokenURL, { method: "GET", signal: controller.signal }));
     } catch {
       if (controller.signal.aborted) {
-        return fail("auth.wait", "LOGIN_TIMEOUT", "等待登录超时，请确认浏览器登录是否完成。", { retryable: true });
+        return fail(command, "LOGIN_TIMEOUT", "等待登录超时，请确认浏览器登录是否完成。", { retryable: true });
       }
-      return fail("auth.wait", "API_UNREACHABLE", "无法连接 BYRDocs token 轮询接口。", { retryable: true });
+      return fail(command, "API_UNREACHABLE", "无法连接 BYRDocs token 轮询接口。", { retryable: true });
     } finally {
       clearTimeout(timeout);
     }
@@ -132,20 +158,20 @@ async function wait(runtime: Runtime, args: string[]): Promise<CliResult> {
     const data = asRecord(body);
     const token = extractToken(data);
     if (response.ok && token) {
-      return saveToken(runtime, "auth.wait", token);
+      return saveToken(runtime, command, token);
     }
 
     const code = typeof data.code === "string" ? data.code : "";
     const message = typeof data.error === "string" ? data.error : "";
     if (response.status === 410 || code === "LOGIN_EXPIRED" || message.includes("过期")) {
-      return fail("auth.wait", "LOGIN_EXPIRED", "登录会话已过期，请重新运行 auth login。");
+      return fail(command, "LOGIN_EXPIRED", "登录会话已过期，请重新运行 auth login。");
     }
     if (response.status === 403 || code === "LOGIN_DENIED") {
-      return fail("auth.wait", "LOGIN_DENIED", "用户拒绝了本次登录。");
+      return fail(command, "LOGIN_DENIED", "用户拒绝了本次登录。");
     }
     await runtime.sleep(options.intervalMs);
   }
-  return fail("auth.wait", "LOGIN_TIMEOUT", "等待登录超时，请确认浏览器登录是否完成。", { retryable: true });
+  return fail(command, "LOGIN_TIMEOUT", "等待登录超时，请确认浏览器登录是否完成。", { retryable: true });
 }
 
 async function status(runtime: Runtime): Promise<CliResult> {
@@ -195,17 +221,17 @@ function extractToken(data: Record<string, unknown>): string | null {
   return null;
 }
 
-function parseWaitOptions(values: Record<string, unknown>): { timeoutMs: number; intervalMs: number } | CliResult {
+function parseWaitOptions(values: Record<string, unknown>, command: string): { timeoutMs: number; intervalMs: number } | CliResult {
   let timeoutMs = 180_000;
   let intervalMs = 2_000;
   const timeout = values["timeout-seconds"] ?? values.timeout;
   if (timeout !== undefined) {
-    const parsed = positiveNumber(timeout, "auth.wait", "--timeout-seconds");
+    const parsed = positiveNumber(timeout, command, "--timeout-seconds");
     if (!parsed.ok) return parsed.result;
     timeoutMs = parsed.value * 1000;
   }
   if (values["interval-ms"] !== undefined) {
-    const parsed = positiveNumber(values["interval-ms"], "auth.wait", "--interval-ms");
+    const parsed = positiveNumber(values["interval-ms"], command, "--interval-ms");
     if (!parsed.ok) return parsed.result;
     intervalMs = parsed.value;
   }
