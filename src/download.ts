@@ -28,7 +28,9 @@ export async function downloadCommand(runtime: Runtime, args: string[]): Promise
   const claims = decodeJwtPayload(token);
   if (!claims?.download) return fail("download", "BUPT_LOGIN_REQUIRED", "当前 token 没有下载权限，请使用 BUPT 统一认证登录。");
 
-  const url = downloadUrl(runtime, ref.key);
+  const outputName = path.basename(output);
+  const filename = ref.filename ?? (outputName || ref.key);
+  const url = downloadUrl(runtime, ref.key, filename);
   let response: Response;
   try {
     response = await runtime.fetch(url, {
@@ -49,11 +51,12 @@ export async function downloadCommand(runtime: Runtime, args: string[]): Promise
   } catch (error) {
     return fail("download", "OUTPUT_WRITE_FAILED", "无法写入输出文件。", { details: { output_path: output, cause: errorMessage(error) } });
   }
-  return ok("download", { key: ref.key, output_path: output }, `已下载到：${output}`);
+  return ok("download", { key: ref.key, filename, output_path: output }, `已下载到：${output}`);
 }
 
-function downloadUrl(runtime: Runtime, key: string): string {
-  return apiUrl(runtime.env, `/files/${encodeURIComponent(key)}?f=3`);
+function downloadUrl(runtime: Runtime, key: string, filename: string): string {
+  const searchParams = new URLSearchParams({ filename, f: "3" });
+  return apiUrl(runtime.env, `/files/${encodeURIComponent(key)}?${searchParams.toString()}`);
 }
 
 async function downloadFailure(response: Response, key: string, url: string): Promise<CliResult | null> {

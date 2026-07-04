@@ -13,6 +13,12 @@ test("file refs parse md5, key, url and reject invalid input", () => {
   assert.deepEqual(parseFileRef(md5), { md5, key: `${md5}.pdf`, ext: "pdf" });
   assert.deepEqual(parseFileRef(`${md5}.zip`), { md5, key: `${md5}.zip`, ext: "zip" });
   assert.deepEqual(parseFileRef(`https://byrdocs.org/files/${md5}.pdf`), { md5, key: `${md5}.pdf`, ext: "pdf" });
+  assert.deepEqual(parseFileRef(`https://byrdocs.org/files/${md5}.pdf?filename=Linear%20Algebra.pdf&f=1`), {
+    md5,
+    key: `${md5}.pdf`,
+    ext: "pdf",
+    filename: "Linear Algebra.pdf"
+  });
   assert.equal(parseFileRef("https://example.com/files/nope.pdf"), null);
 });
 
@@ -281,8 +287,29 @@ test("download uses site file route and maps site responses", async () => {
     }
   });
   assert.equal(okDownload.code, 0);
-  assert.match(seenUrl, /\/files\/e4d909c290d0fb1ca068ffaddf22cbd0\.pdf\?f=3$/);
+  assert.match(seenUrl, /\/files\/e4d909c290d0fb1ca068ffaddf22cbd0\.pdf\?filename=out\.pdf&f=3$/);
+  assert.equal(okDownload.json.data.filename, "out.pdf");
   assert.equal(await readFile(output, "utf8"), "pdf-body");
+
+  const searchUrlOutput = path.join(dir, "search-url.pdf");
+  let seenSearchUrl = "";
+  const searchUrlDownload = await runCli([
+    "download",
+    `https://byrdocs.org/files/${key}?filename=Linear%20Algebra.pdf&f=1`,
+    "--output",
+    searchUrlOutput,
+    "--json"
+  ], {
+    dir,
+    fetch: async (url) => {
+      seenSearchUrl = String(url);
+      return new Response("pdf-body", { status: 200, headers: { "content-type": "application/pdf" } });
+    }
+  });
+  assert.equal(searchUrlDownload.code, 0);
+  assert.equal(new URL(seenSearchUrl).searchParams.get("filename"), "Linear Algebra.pdf");
+  assert.equal(new URL(seenSearchUrl).searchParams.get("f"), "3");
+  assert.equal(searchUrlDownload.json.data.filename, "Linear Algebra.pdf");
 
   const unauthorizedOutput = path.join(dir, "unauthorized.pdf");
   const unauthorized = await runCli(["download", key, "--output", unauthorizedOutput, "--json"], {
