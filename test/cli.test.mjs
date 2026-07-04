@@ -239,6 +239,36 @@ test("help command and --help return usage successfully", async () => {
   assert.equal(noArgs.json.command, "help");
 });
 
+test("text success output includes structured data, not only a terse message", async () => {
+  const search = await runCliText(["search", "高等数学"], {
+    fetch: async () =>
+      jsonResponse({
+        results: [
+          {
+            type: "book",
+            id: "e4d909c290d0fb1ca068ffaddf22cbd0",
+            url: "https://byrdocs.org/files/e4d909c290d0fb1ca068ffaddf22cbd0.pdf?filename=高等数学.pdf&f=1",
+            data: { title: "高等数学", filetype: "pdf" }
+          }
+        ]
+      })
+  });
+  assert.equal(search.code, 0);
+  assert.match(search.stdout, /找到 1 条结果/);
+  assert.match(search.stdout, /query: 高等数学/);
+  assert.match(search.stdout, /title: 高等数学/);
+  assert.match(search.stdout, /url: https:\/\/byrdocs\.org\/files\//);
+
+  const dir = await tempDir();
+  const md5 = "e4d909c290d0fb1ca068ffaddf22cbd0";
+  const yaml = path.join(dir, `${md5}.yaml`);
+  const init = await runCliText(["meta", "init", `${md5}.pdf`, "--type", "book", "--out", yaml], { dir });
+  assert.equal(init.code, 0);
+  assert.match(init.stdout, /已生成 metadata 模板/);
+  assert.match(init.stdout, /needs_user_input:/);
+  assert.match(init.stdout, /schema_source:/);
+});
+
 test("upload maps FILE_EXISTS to a successful deduplicated result", async () => {
   const dir = await tempDir();
   await saveToken(dir, jwt({ id: "BUPT-1", download: true }));

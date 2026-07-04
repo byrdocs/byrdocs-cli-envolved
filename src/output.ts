@@ -87,7 +87,14 @@ export function toJsonEnvelope(result: CliResult): Record<string, unknown> {
 
 export function humanText(result: CliResult): string {
   const warnings = formatWarnings(result.warnings);
-  if (result.ok) return [result.text ?? `完成：${result.command}`, warnings].filter(Boolean).join("\n");
+  if (result.ok) {
+    if (result.command === "help") {
+      const helpText = helpDataText(result.data);
+      if (helpText) return [helpText, warnings].filter(Boolean).join("\n");
+    }
+    const data = formatData(result.data);
+    return [result.text ?? `完成：${result.command}`, data ? `结果：\n${data}` : "", warnings].filter(Boolean).join("\n");
+  }
   const detail = formatDetails(result.error.details);
   const diagnostics = formatDiagnostics(result.error.diagnostics);
   const suggestions = result.error.suggestions.length ? `建议：\n${result.error.suggestions.map((item) => `- ${item}`).join("\n")}` : "";
@@ -167,4 +174,53 @@ function formatDiagnostics(diagnostics: unknown[] | undefined): string {
 function formatUnknown(value: unknown): string {
   const text = typeof value === "string" ? value : JSON.stringify(value);
   return text.length > 1200 ? `${text.slice(0, 1200)}...` : text;
+}
+
+function helpDataText(data: unknown): string {
+  if (!isRecord(data)) return "";
+  return typeof data.text === "string" ? data.text : "";
+}
+
+function formatData(value: unknown, indent = 0): string {
+  if (value === undefined) return "";
+  if (value === null) return "null";
+  if (typeof value !== "object") return formatScalar(value);
+  if (Array.isArray(value)) return formatArray(value, indent);
+  return formatObject(value as Record<string, unknown>, indent);
+}
+
+function formatObject(value: Record<string, unknown>, indent: number): string {
+  const entries = Object.entries(value);
+  if (!entries.length) return "{}";
+  const pad = " ".repeat(indent);
+  return entries
+    .map(([key, item]) => {
+      if (isNested(item)) return `${pad}${key}:\n${formatData(item, indent + 2)}`;
+      return `${pad}${key}: ${formatData(item, indent + 2)}`;
+    })
+    .join("\n");
+}
+
+function formatArray(value: unknown[], indent: number): string {
+  if (!value.length) return "[]";
+  const pad = " ".repeat(indent);
+  return value
+    .map((item) => {
+      if (isNested(item)) return `${pad}-\n${formatData(item, indent + 2)}`;
+      return `${pad}- ${formatData(item, indent + 2)}`;
+    })
+    .join("\n");
+}
+
+function formatScalar(value: unknown): string {
+  if (typeof value === "string") return value;
+  return JSON.stringify(value);
+}
+
+function isNested(value: unknown): boolean {
+  return value !== null && typeof value === "object";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
