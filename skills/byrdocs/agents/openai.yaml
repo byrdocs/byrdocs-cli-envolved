@@ -1,0 +1,4 @@
+interface:
+  display_name: "BYRDocs 资料"
+  short_description: "搜索、下载并贡献 BYRDocs 资料。"
+  default_prompt: "使用 $byrdocs 搜索、下载或贡献 BYRDocs 资料。"

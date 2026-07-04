@@ -1,4 +1,4 @@
-> 本文件随 BYRDocs 贡献 skill 分发；以下正文原样同步自 `https://search.byrdocs.org/llms.txt`，需要刷新时以线上版本为准。
+> 本文件随 BYRDocs skill 分发；以下正文原样同步自 `https://search.byrdocs.org/llms.txt`，需要刷新时以线上版本为准。
 
 # BYR Docs 搜索 API & MCP
 

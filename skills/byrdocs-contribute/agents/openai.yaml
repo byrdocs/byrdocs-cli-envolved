@@ -1,4 +1,0 @@
-interface:
-  display_name: "BYRDocs 贡献"
-  short_description: "引导 Agent 使用 BYRDocs CLI 完成资料上传、metadata 和 PR 贡献流程。"
-  default_prompt: "帮我通过 BYRDocs CLI 向 BYRDocs 贡献一份资料。"

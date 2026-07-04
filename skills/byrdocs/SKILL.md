@@ -1,11 +1,11 @@
 ---
-name: byrdocs-contribute
-description: 帮助普通用户通过 Agent 向 BYRDocs 贡献资料。适用于用户想上传 BYRDocs 文件、安装或临时运行 BYRDocs CLI、登录 BYRDocs、填写和校验 metadata、创建或更新 byrdocs/byrdocs-archive 的 GitHub PR、处理 BYRDocs 贡献 CI 或 review 反馈的场景。
+name: byrdocs
+description: 帮助普通用户通过 Agent 使用 BYRDocs。适用于用户想搜索 BYRDocs 教材/资料/试题、下载 BYRDocs 文件、登录 BYRDocs、上传文件、填写和校验 metadata、创建或更新 byrdocs/byrdocs-archive 的 GitHub PR、处理 BYRDocs 贡献 CI 或 review 反馈的场景。
 ---
 
-# BYRDocs 贡献流程
+# BYRDocs 搜索、下载和贡献
 
-用这个 skill 帮普通用户完成一次 BYRDocs 资料贡献。CLI 负责登录、上传、metadata 模板、校验、预览等确定性动作；搜索按包内 `references/search.md` 使用；Agent 负责理解资料、询问用户、编辑 YAML、使用 GitHub 创建 PR。
+用这个 skill 帮普通用户搜索和下载 BYRDocs 资料，或完成一次 BYRDocs 资料贡献。CLI 负责登录、下载、上传、metadata 模板、校验、预览等确定性动作；搜索按包内 `references/search.md` 使用；Agent 负责理解资料、询问用户、编辑 YAML、使用 GitHub 创建 PR。
 
 ## 基本原则
 
@@ -17,6 +17,12 @@ description: 帮助普通用户通过 Agent 向 BYRDocs 贡献资料。适用于
 - metadata 里的事实必须来自文件内容、BYRDocs 当前文档/schema、搜索结果或用户确认。不要为了通过校验编造课程、老师、年份、学期、学院、来源、ISBN、授权状态等信息。
 - 不确定的必填信息要问用户；如果上游 schema/文档允许省略未知的可选字段，就省略，不要猜。
 - 执行 shell 命令时，用户可控的文件路径、标题、课程名、PR body 路径等必须作为独立参数或正确引用的参数传入；不要拼接未转义的 shell 字符串。branch 名、临时文件名等命令语义字段只使用 MD5 派生的安全值。
+
+## 任务入口
+
+- 只搜索资料：读取 `references/search.md`，优先用 `https://search.byrdocs.org/mcp` 的 `search_files` 或 `POST https://search.byrdocs.org/api/search`。只有不能直接使用 MCP/HTTP 时，才退回 `byrdocs search "<query>" --limit 5 --json`。
+- 只下载资料：先按下面的 CLI 契约选择 `byrdocs` 调用方式，检查 `byrdocs auth status --json`；未登录时运行 `byrdocs auth login --json`，让用户打开 `login_url` 后再运行 `byrdocs auth wait <session-id> --json`；最后用 `byrdocs download <file-ref> --output <path> --json`。如果用户没有提供 file-ref，先走搜索入口。
+- 贡献资料：走“贡献主流程”。贡献前的查重使用上面的搜索入口；上传、metadata、PR 使用 CLI 和 `gh`。
 
 ## Skill 和 CLI 的安装
 
@@ -99,7 +105,7 @@ byrdocs meta preview metadata/<md5>.yml --json
 - 上传成功只表示二进制文件进入 BYRDocs 存储。只有 metadata PR 合并后，资料才会进入正式展示/搜索流程。
 - BYRDocs 文件以 MD5 和扩展名命名，例如 `<md5>.pdf` 或 `<md5>.zip`；metadata 也以同一个 MD5 命名。
 - 当前工作目录不一定是 `byrdocs-archive` checkout。需要做 GitHub PR 时，可以临时 clone/fork/branch，但不要污染用户无关仓库。
-- 不要直接调用主站内部 API；除非维护 CLI 本身，普通贡献流程只通过 BYRDocs CLI 和 `gh`。
+- 不要直接调用主站内部 API；搜索只使用公开的搜索 MCP/HTTP API，贡献流程只通过 BYRDocs CLI 和 `gh`。除非维护 CLI 本身，不要绕过这些入口。
 - 不要处理删除或修改旧文件，除非用户明确提出。普通新增贡献只新增或修改本次相关的 `metadata/<md5>.yml`。
 - 不要把完整 schema 复制进 skill；schema 和字段细节以当前 CLI、上游 docs/schema、CI 反馈为准。
 - 普通用户贡献默认创建 draft PR；只有用户确认后才标记 ready for review。
@@ -232,7 +238,7 @@ byrdocs meta init <md5-or-key-or-url> --type <book|test|doc> --out workspace/gen
 
 8. 填写 YAML。
 
-- 填写的 YAML 必须展示并解释给用户，解释所有填写了的字段和来源，展示所有未填写的字段和原因，向用户确认已经正确填写了所有能填写的字段。
+- 填写的 YAML 必须展示并解释给用户，**解释所有填写了的字段和来源，展示所有未填写的字段和原因，向用户确认已经正确填写了所有能填写的字段**。
 - 最终进入仓库的文件必须是 `metadata/<md5>.yml`；文件名 md5、`id`、`url` 里的 md5、`data.filetype` 必须一致。从文件推断的信息和用户确认的信息要在 PR body 中区分说明。
 
 9. 校验并预览：
