@@ -172,7 +172,7 @@ byrdocs auth wait <session-id> --json
 
 1. 先创建或选择独立 workspace，并确认用户提供的文件路径能在当前 shell 中访问。
 
-2. 检查服务、登录和 schema。先读取当前可用 type 和 schema，再判断资料类型；如果当前 schema 类型变化，以当前 schema 为准，不要强行使用旧类型：
+2. 检查服务、登录和 schema。先读取当前可用 type 和 schema，再判断资料类型；如果当前 schema 类型变化，以当前 schema 为准，不要强行使用旧类型，不要使用 fallback 的 schema：
 
 ```bash
 byrdocs doctor --json
@@ -230,7 +230,10 @@ byrdocs meta schema --type <book|test|doc> --json
 byrdocs meta init <md5-or-key-or-url> --type <book|test|doc> --out workspace/generated/metadata/<md5>.yml --json
 ```
 
-8. 填写 YAML。最终进入仓库的文件必须是 `metadata/<md5>.yml`；文件名 md5、`id`、`url` 里的 md5、`data.filetype` 必须一致。从文件推断的信息和用户确认的信息要在 PR body 中区分说明。
+8. 填写 YAML。
+
+- 填写的 YAML 必须展示并解释给用户，解释所有填写了的字段和来源，展示所有未填写的字段和原因，向用户确认已经正确填写了所有能填写的字段。
+- 最终进入仓库的文件必须是 `metadata/<md5>.yml`；文件名 md5、`id`、`url` 里的 md5、`data.filetype` 必须一致。从文件推断的信息和用户确认的信息要在 PR body 中区分说明。
 
 9. 校验并预览：
 
@@ -345,7 +348,7 @@ PR body 应包含：
 - metadata 事实来源，例如文件内容推断、用户确认、ISBN 查询、搜索结果。
 - `byrdocs meta validate` 和 `meta preview` 的结果摘要。
 - 搜索到的疑似重复资料及处理说明。
-- "由 BYRDocs Skill 自动生成" 的说明。
+- "由 [BYR Docs Skill](https://github.com/byrdocs/byrdocs-cli-envolved) 自动生成" 的说明。
 
 PR body 可以写仓库相对路径 `metadata/<md5>.yml`；不应包含 token、cookie、本机绝对路径、JWT claims 或不必要的个人标识。
 

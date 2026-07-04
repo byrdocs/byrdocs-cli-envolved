@@ -5,8 +5,8 @@ import { ok, type CliResult, type WarningItem } from "./output.js";
 export async function doctorCommand(runtime: Runtime): Promise<CliResult> {
   const [api, search, token] = await Promise.all([check(runtime, apiBase(runtime.env)), check(runtime, searchEndpoint(runtime.env)), hasToken(runtime)]);
   const warnings: WarningItem[] = [];
-  if (!api.reachable) warnings.push({ code: "API_UNREACHABLE", message: "主站 API 当前不可达。", suggestions: ["检查网络连接。", "如果使用测试环境，检查 --api-base。"] });
-  if (!search.reachable) warnings.push({ code: "SEARCH_API_UNREACHABLE", message: "搜索 API 当前不可达。", suggestions: ["检查网络连接。", "如果使用测试环境，检查 --search-url。"] });
+  if (!api.reachable) warnings.push({ code: "API_UNREACHABLE", message: "主站 API 当前不可达。", suggestions: ["检查网络连接。", "确认是否在禁用网络权限的沙盒中运行", "如果使用测试环境，检查 --api-base。"] });
+  if (!search.reachable) warnings.push({ code: "SEARCH_API_UNREACHABLE", message: "搜索 API 当前不可达。", suggestions: ["检查网络连接。", "确认是否在禁用网络权限的沙盒中运行", "如果使用测试环境，检查 --search-url。"] });
   return ok(
     "doctor",
     {
