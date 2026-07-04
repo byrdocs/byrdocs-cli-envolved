@@ -17,18 +17,18 @@ export async function run(argv = process.argv.slice(2), runtime: Runtime = defau
     return parsed.result.exitCode;
   }
   const { json, help, args } = parsed;
-  const result = await Promise.resolve(help ? helpCommand(args) : dispatch(runtime, args)).catch((error: unknown) =>
+  const result = await Promise.resolve(help ? helpCommand(args) : dispatch(runtime, args, { json })).catch((error: unknown) =>
     fail("unknown", "UNKNOWN_ERROR", "命令执行失败。", { details: error instanceof Error ? error.message : String(error) })
   );
   writeResult(runtime, result, json);
   return result.exitCode;
 }
 
-async function dispatch(runtime: Runtime, args: string[]): Promise<CliResult> {
+async function dispatch(runtime: Runtime, args: string[], context: { json: boolean }): Promise<CliResult> {
   const command = args[0];
   if (!command || command === "help") return helpCommand(args.slice(1));
   if (command === "doctor") return doctorCommand(runtime);
-  if (command === "auth") return authCommand(runtime, args.slice(1));
+  if (command === "auth") return authCommand(runtime, args.slice(1), context);
   if (command === "upload") return uploadCommand(runtime, args.slice(1));
   if (command === "download") return downloadCommand(runtime, args.slice(1));
   if (command === "meta") return metaCommand(runtime, args.slice(1));
@@ -90,7 +90,7 @@ const HELP: Record<
 
 命令：
   doctor                              检查本地环境和 BYRDocs 服务连通性
-  auth login                          创建登录会话
+  auth login                          登录 BYRDocs；文本模式默认等待，JSON 模式默认返回会话
   auth wait <session-id>              等待网页登录完成并保存 token
   auth status                         查看本地登录状态
   auth logout                         删除本地 token 和登录会话
@@ -115,16 +115,18 @@ const HELP: Record<
     topic: "auth",
     description: "管理 BYRDocs 登录会话和本地 token。",
     usage: "byrdocs auth <login|wait|status|logout> [--json]",
-    options: ["auth wait <session-id> [--timeout-seconds n] [--interval-ms n]"],
+    options: ["auth login [--wait|--no-wait] [--timeout-seconds n] [--interval-ms n]", "auth wait <session-id> [--timeout-seconds n] [--interval-ms n]"],
     text: `用法：byrdocs auth <login|wait|status|logout> [--json]
 
 子命令：
-  auth login                    创建登录会话并返回浏览器登录链接
+  auth login                    登录 BYRDocs。文本模式默认等待；JSON 模式默认返回 login_url/session_id
   auth wait <session-id>        轮询登录结果并保存 token
   auth status                   查看本地 JWT claims 推断出的登录状态
   auth logout                   删除本地 token 和登录会话
 
 参数：
+  auth login --wait             JSON 模式也等待网页登录完成并保存 token
+  auth login --no-wait          文本模式只创建会话并返回下一步命令
   auth wait --timeout-seconds n 等待超时秒数，默认 180
   auth wait --interval-ms n     轮询间隔毫秒，默认 2000`
   },

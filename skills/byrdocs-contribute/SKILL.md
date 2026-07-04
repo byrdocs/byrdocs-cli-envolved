@@ -162,7 +162,7 @@ byrdocs auth wait <session-id> --json
 登录规则：
 
 - token 和登录会话位置以当前 BYRDocs CLI 文档、`doctor` 或 `auth status` 输出为准；不要读取、展示或复制 token 文件。只有排错时才提示用户检查配置目录是否可写。
-- `auth login --json` 会返回 `login_url`、`session_id` 和 `poll_command`。只把登录链接和下一步命令展示给用户，不要输出或解释本地保存的轮询凭证。
+- `auth login --json` 是给 Agent 用的非阻塞登录入口，会返回 `login_url`、`session_id` 和 `poll_command`。只把登录链接和下一步命令展示给用户，不要输出或解释本地保存的轮询凭证。不要省略 `--json`：普通文本模式的 `auth login` 会默认等待用户网页登录完成。
 - BUPT 统一认证 token 可以上传，也可以下载。BYRDocs 的 GitHub 登录 token 通常可以上传，但校外下载可能没有权限。
 - 如果下载返回 `BUPT_LOGIN_REQUIRED`，引导用户改用 BUPT 统一认证登录，不要反复重试 GitHub 登录。
 - 如果 `auth wait` 超时，而用户还在浏览器登录，可以用更长超时重试：`byrdocs auth wait <session-id> --timeout-seconds <n> --json`。如果会话过期，重新 `auth login`。

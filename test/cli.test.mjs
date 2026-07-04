@@ -82,9 +82,8 @@ test("auth wait saves a valid token and rejects expired sessions", async () => {
   assert.equal(expired.json.error.code, "LOGIN_EXPIRED");
 });
 
-test("auth login waits by default and --no-wait only creates a session", async () => {
+test("auth login keeps JSON agent flow non-blocking and waits for human mode", async () => {
   const dir = await tempDir();
-  const token = jwt({ id: "GitHub-99" });
   const calls = [];
   const login = await runCli(["auth", "login", "--json"], {
     dir,
@@ -93,30 +92,47 @@ test("auth login waits by default and --no-wait only creates a session", async (
       if (String(url).endsWith("/api/auth/login")) {
         return jsonResponse({ loginURL: "https://byrdocs.test/login", tokenURL: "https://byrdocs.test/token" });
       }
-      return jsonResponse({ token, success: true });
+      throw new Error(`unexpected poll: ${url}`);
     }
   });
   assert.equal(login.code, 0);
   assert.equal(login.json.command, "auth.login");
-  assert.equal(login.json.data.logged_in, true);
-  assert.equal(JSON.parse(await readFile(path.join(dir, "token.json"), "utf8")).token, token);
-  assert.match(login.stderr, /正在等待网页登录完成/);
-  assert.deepEqual(calls, ["https://byrdocs.test/api/auth/login", "https://byrdocs.test/token"]);
+  assert.equal(login.json.data.status, "user_action_required");
+  assert.match(login.json.data.session_id, /^login_/);
+  assert.equal(login.stderr, "");
+  assert.deepEqual(calls, ["https://byrdocs.test/api/auth/login"]);
 
-  const noWaitDir = await tempDir();
-  const noWaitCalls = [];
-  const noWait = await runCli(["auth", "login", "--no-wait", "--json"], {
-    dir: noWaitDir,
+  const humanDir = await tempDir();
+  const token = jwt({ id: "GitHub-99" });
+  const humanCalls = [];
+  const human = await runCliText(["auth", "login"], {
+    dir: humanDir,
     fetch: async (url) => {
-      noWaitCalls.push(String(url));
-      return jsonResponse({ loginURL: "https://byrdocs.test/login", tokenURL: "https://byrdocs.test/token" });
+      humanCalls.push(String(url));
+      if (String(url).endsWith("/api/auth/login")) {
+        return jsonResponse({ loginURL: "https://byrdocs.test/login", tokenURL: "https://byrdocs.test/token" });
+      }
+      return jsonResponse({ token, success: true });
     }
   });
-  assert.equal(noWait.code, 0);
-  assert.equal(noWait.json.data.status, "user_action_required");
-  assert.match(noWait.json.data.session_id, /^login_/);
-  assert.equal(noWait.stderr, "");
-  assert.deepEqual(noWaitCalls, ["https://byrdocs.test/api/auth/login"]);
+  assert.equal(human.code, 0);
+  assert.match(human.stdout, /BYRDocs 登录成功/);
+  assert.match(human.stderr, /正在等待网页登录完成/);
+  assert.equal(JSON.parse(await readFile(path.join(humanDir, "token.json"), "utf8")).token, token);
+  assert.deepEqual(humanCalls, ["https://byrdocs.test/api/auth/login", "https://byrdocs.test/token"]);
+
+  const waitJsonDir = await tempDir();
+  const waitJson = await runCli(["auth", "login", "--wait", "--json"], {
+    dir: waitJsonDir,
+    fetch: async (url) => {
+      if (String(url).endsWith("/api/auth/login")) {
+        return jsonResponse({ loginURL: "https://byrdocs.test/login", tokenURL: "https://byrdocs.test/token" });
+      }
+      return jsonResponse({ token, success: true });
+    }
+  });
+  assert.equal(waitJson.code, 0);
+  assert.equal(waitJson.json.data.logged_in, true);
 });
 
 test("auth wait aborts long-poll fetch when CLI timeout expires", async () => {

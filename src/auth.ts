@@ -42,31 +42,36 @@ export function claimsStatus(claims: JwtClaims): {
   };
 }
 
-export async function authCommand(runtime: Runtime, args: string[]): Promise<CliResult> {
+export async function authCommand(runtime: Runtime, args: string[], context: { json?: boolean } = {}): Promise<CliResult> {
   const sub = args[0];
-  if (sub === "login") return login(runtime, args.slice(1));
+  if (sub === "login") return login(runtime, args.slice(1), context);
   if (sub === "wait") return wait(runtime, args.slice(1));
   if (sub === "status") return status(runtime);
   if (sub === "logout") return logout(runtime);
   return fail("auth", "INVALID_ARGUMENT", "未知 auth 子命令。");
 }
 
-async function login(runtime: Runtime, args: string[]): Promise<CliResult> {
+async function login(runtime: Runtime, args: string[], context: { json?: boolean }): Promise<CliResult> {
   const parsed = parseCommandArgs("auth.login", args, {
     "no-wait": { type: "boolean" },
+    wait: { type: "boolean" },
     timeout: { type: "string" },
     "timeout-seconds": { type: "string" },
     "interval-ms": { type: "string" }
   });
   if (!parsed.ok) return parsed.result;
   if (parsed.parsed.positionals.length) return fail("auth.login", "INVALID_ARGUMENT", "auth login 不接受额外位置参数。");
+  if (parsed.parsed.values.wait === true && parsed.parsed.values["no-wait"] === true) {
+    return fail("auth.login", "INVALID_ARGUMENT", "--wait 和 --no-wait 不能同时使用。");
+  }
   const options = parseWaitOptions(parsed.parsed.values, "auth.login");
   if ("exitCode" in options) return options;
 
   const session = await createLoginSession(runtime);
   if (!session.ok) return session.result;
   const started = loginStartedResult(session);
-  if (parsed.parsed.values["no-wait"] === true) return started;
+  const shouldWait = parsed.parsed.values.wait === true || (context.json !== true && parsed.parsed.values["no-wait"] !== true);
+  if (!shouldWait) return started;
   runtime.stderr.write(`请在浏览器打开登录链接：\n${session.loginURL}\n正在等待网页登录完成...\n`);
   return pollToken(runtime, "auth.login", session.tokenURL, options);
 }
