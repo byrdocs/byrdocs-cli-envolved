@@ -97,22 +97,22 @@ export function humanText(result: CliResult): string {
 function defaultSuggestions(code: string): string[] {
   switch (code) {
     case "INVALID_ARGUMENT":
-      return ["运行 byrdocs help <command> 查看正确用法。", "检查参数名、参数值和位置参数数量。"];
+      return ["检查 details 中的参数名和值。", "运行 byrdocs help <command> 查看正确用法后重试。"];
     case "NOT_LOGGED_IN":
-      return ["运行 byrdocs auth login 登录后重试。"];
+      return ["运行 byrdocs auth login --json 获取登录链接。", "让用户在浏览器完成登录后，运行返回的 poll_command 或 byrdocs auth wait <session-id> --json。"];
     case "TOKEN_INVALID":
     case "AUTH_TOKEN_SAVE_FAILED":
-      return ["重新运行 byrdocs auth login。", "如果问题持续，运行 byrdocs auth logout 后再登录。"];
+      return ["运行 byrdocs auth logout --json 清理本地登录状态。", "重新运行 byrdocs auth login --json，让用户重新登录。"];
     case "BUPT_LOGIN_REQUIRED":
-      return ["使用 BUPT 统一认证登录，而不是 GitHub 登录。"];
+      return ["运行 byrdocs auth logout --json 后重新登录。", "把登录链接交给用户，并明确需要选择 BUPT 统一认证登录，而不是 GitHub 登录。"];
     case "API_UNREACHABLE":
     case "SEARCH_API_UNREACHABLE":
       return ["检查网络连接和 BYRDocs 服务状态。", "如果使用测试环境，检查 --api-base 或 --search-url 是否正确。"];
     case "LOGIN_TIMEOUT":
-      return ["确认浏览器中的登录流程已经完成。", "需要更久等待时使用 --timeout-seconds 增大超时时间。"];
+      return ["询问用户是否仍在浏览器登录。", "如果用户仍在登录，使用原 session_id 或 poll_command 并加大 --timeout-seconds 重试。", "如果用户已经关闭页面或不确定，重新运行 byrdocs auth login --json 创建新会话。"];
     case "LOGIN_EXPIRED":
     case "LOGIN_SESSION_NOT_FOUND":
-      return ["重新运行 byrdocs auth login。"];
+      return ["重新运行 byrdocs auth login --json 创建新的登录会话。", "把新的 login_url 展示给用户后，再运行新的 poll_command。"];
     case "FILE_NOT_FOUND":
     case "CONFIG_READ_FAILED":
       return ["检查路径是否存在，以及当前用户是否有读取权限。"];

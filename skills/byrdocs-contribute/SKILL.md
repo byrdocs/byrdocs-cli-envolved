@@ -68,8 +68,9 @@ BYRDOCS="npx -y @byrdocs/cli@latest"
 JSON 模式约定：
 
 - 成功时 exit code 为 0，stdout 是一个 JSON object，通常包含 `ok: true` 和 `data`。
-- 失败时 exit code 非 0，stdout 仍是一个 JSON object，包含 `ok: false` 和 `error.code`。
-- Agent 的流程判断只依赖 exit code、`ok`、`data`、`error.code` 和稳定结构字段。
+- 失败时 exit code 非 0，stdout 仍是一个 JSON object，包含 `ok: false` 和 `error`。
+- Agent 的流程判断优先依赖 exit code、`ok`、`data` 和稳定结构字段；`error.code` 只作为分类标签，不要把它当成需要查表的唯一信息。
+- 失败恢复优先读取并转述 CLI 返回的 `error.message`、`error.details`、`error.diagnostics` 和 `error.suggestions`。如果这些字段已经给出下一步，直接按它们执行或转述给用户，不要去 skill 里另查错误码。
 - `message` 是给人看的中文说明，可以转述给用户，但不能用它做机器判断。
 - 默认文本输出不是稳定接口，不要解析。
 - 下载等文件内容不会写到 stdout；必须使用 `--output <path>`。
@@ -398,20 +399,14 @@ gh pr view <number> --repo byrdocs/byrdocs-archive --json comments,reviews,statu
 
 不要输出 token、本机绝对路径、完整 JWT claims、长 JSON dump 或无关命令日志。
 
-## 常见错误处理
+## 常见恢复原则
 
-- `NOT_LOGGED_IN`：运行登录流程。
-- `LOGIN_TIMEOUT`：如果用户仍在登录，延长 timeout 重试；否则重新创建登录会话。
-- `LOGIN_EXPIRED` / `LOGIN_DENIED`：重新创建登录会话，或说明用户拒绝了登录。
-- `BUPT_LOGIN_REQUIRED`：请用户使用 BUPT 统一认证登录。
-- `FILE_EXISTS`：按上传成功处理，继续 metadata。
-- `UNSUPPORTED_FILE_TYPE`：按 BYRDocs 文件规则转换为 PDF 或打包为 ZIP；不能为了上传强行改扩展名。
-- `API_UNREACHABLE` / `SEARCH_API_UNREACHABLE`：说明服务或网络不可达，稍后重试。
-- `METADATA_VALIDATION_FAILED`：根据 `error.diagnostics` 修 YAML，不要绕过校验。
-- `KEY_MD5_MISMATCH`：重新生成模板或修正文件名、`id`、`url`、`filetype` 的一致性。
-- `OUTPUT_WRITE_FAILED`：检查 workspace 路径和权限。
-- `DOWNLOAD_NOT_FOUND`：确认 key 是否来自上传结果；若文件已过期，需要重新上传。
-- `CLI_NOT_FOUND` / `CLI_VERSION_UNSUPPORTED` / `INVALID_JSON_OUTPUT`：检查安装方式、CLI 版本和 JSON 输出契约；不要继续执行贡献流程。
-- `GITHUB_NOT_LOGGED_IN`：运行或引导用户运行 `gh auth login`。
-- `GITHUB_WORKTREE_DIRTY`：停止提交，清理 workspace 或重新 clone。
-- `PR_ALREADY_EXISTS`：不要重复创建 PR，push 更新已有 head branch 并返回已有 PR URL。
+CLI 失败时，不要让用户或 Agent 去查错误码表。先读取 JSON 里的 `error.message`、`error.details`、`error.diagnostics` 和 `error.suggestions`：
+
+- 有 `error.suggestions` 时，优先按建议执行；需要用户动作时，把建议转述给用户。
+- 有 `error.diagnostics` 时，按其中的 `path` 和 `message` 修改 YAML 或输入文件，不要绕过校验。
+- 有 `error.details` 时，用其中的 `path`、`output_path`、`session_id`、`status`、`response`、`endpoint` 等字段定位具体失败点。
+- 上传返回 `ok: true` 且 `data.status: "exists"` 时，这是可继续的成功状态，不是错误。
+- 如果 stdout 不是合法 BYRDocs JSON，才按工具级故障处理：检查 CLI 是否安装、Node/npm/npx 是否可用、网络是否可达、CLI 版本是否过旧。
+
+GitHub 相关故障仍按 `gh` 输出处理：未登录就引导用户运行 `gh auth login`；工作区脏就停止提交并清理 workspace 或重新 clone；已有 PR 就 push 更新已有 head branch，不要重复创建 PR。

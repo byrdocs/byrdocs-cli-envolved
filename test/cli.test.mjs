@@ -80,6 +80,8 @@ test("auth wait saves a valid token and rejects expired sessions", async () => {
   });
   assert.equal(expired.code, 1);
   assert.equal(expired.json.error.code, "LOGIN_EXPIRED");
+  assert.ok(expired.json.error.details.response.error);
+  assert.ok(expired.json.error.suggestions.some((item) => item.includes("login --json")));
 });
 
 test("auth login keeps JSON agent flow non-blocking and waits for human mode", async () => {
@@ -157,6 +159,8 @@ test("auth wait aborts long-poll fetch when CLI timeout expires", async () => {
   assert.equal(sawSignal, true);
   assert.equal(result.code, 1);
   assert.equal(result.json.error.code, "LOGIN_TIMEOUT");
+  assert.ok(result.json.error.details.token_url);
+  assert.ok(result.json.error.suggestions.some((item) => item.includes("timeout-seconds")));
 });
 
 test("--json writes one envelope to stdout and keeps stderr empty for stable commands", async () => {
@@ -246,6 +250,7 @@ test("download distinguishes missing token and token without download capability
   const missing = await runCli(["download", key, "--output", path.join(dir, "out.pdf"), "--json"], { dir });
   assert.equal(missing.code, 1);
   assert.equal(missing.json.error.code, "NOT_LOGGED_IN");
+  assert.ok(missing.json.error.suggestions.some((item) => item.includes("auth login --json")));
 
   await saveToken(dir, jwt({ id: "GitHub-1" }));
   let called = false;
@@ -258,6 +263,7 @@ test("download distinguishes missing token and token without download capability
   });
   assert.equal(github.code, 1);
   assert.equal(github.json.error.code, "BUPT_LOGIN_REQUIRED");
+  assert.ok(github.json.error.suggestions.some((item) => item.includes("BUPT")));
   assert.equal(called, false);
 });
 
@@ -286,6 +292,7 @@ test("download uses site file route and maps site responses", async () => {
   assert.equal(unauthorized.code, 1);
   assert.equal(unauthorized.json.error.code, "DOWNLOAD_UNAUTHORIZED");
   assert.equal(unauthorized.json.error.details.status, 401);
+  assert.ok(unauthorized.json.error.suggestions.some((item) => item.includes("BUPT")));
   await assert.rejects(access(unauthorizedOutput));
 
   const missingOutput = path.join(dir, "missing.pdf");
@@ -306,6 +313,7 @@ test("download uses site file route and maps site responses", async () => {
   assert.equal(jsonError.code, 1);
   assert.equal(jsonError.json.error.code, "DOWNLOAD_FAILED");
   assert.equal(jsonError.json.error.message, "下载接口返回了 JSON，而不是文件内容。");
+  assert.ok(jsonError.json.error.suggestions.length > 0);
   await assert.rejects(access(jsonOutput));
 });
 
@@ -322,6 +330,7 @@ test("meta init, validate, preview and YAML parse errors", async () => {
   assert.equal(invalid.code, 1);
   assert.equal(invalid.json.error.code, "METADATA_VALIDATION_FAILED");
   assert.ok(invalid.json.error.diagnostics.some((item) => item.code === "REQUIRED_FIELD_MISSING"));
+  assert.ok(invalid.json.error.suggestions.some((item) => item.includes("diagnostics")));
 
   const preview = await runCli(["meta", "preview", yaml, "--json"], { dir });
   assert.equal(preview.code, 0);

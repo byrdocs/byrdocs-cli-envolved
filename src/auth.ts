@@ -110,8 +110,8 @@ async function createLoginSession(
   const sessionId = `login_${randomUUID().replaceAll("-", "")}`;
   try {
     await saveSession(runtime.env, sessionId, { tokenURL, created_at: new Date().toISOString() });
-  } catch {
-    return { ok: false, result: fail("auth.login", "CONFIG_WRITE_FAILED", "无法保存本地登录会话。") };
+  } catch (error) {
+    return { ok: false, result: fail("auth.login", "CONFIG_WRITE_FAILED", "无法保存本地登录会话。", { details: { session_id: sessionId, cause: errorMessage(error) } }) };
   }
   return { ok: true, loginURL, tokenURL, sessionId };
 }
@@ -144,10 +144,10 @@ async function wait(runtime: Runtime, args: string[]): Promise<CliResult> {
   let session;
   try {
     session = await readSession(runtime.env, sessionId);
-  } catch {
-    return fail("auth.wait", "CONFIG_READ_FAILED", "无法读取本地登录会话。");
+  } catch (error) {
+    return fail("auth.wait", "CONFIG_READ_FAILED", "无法读取本地登录会话。", { details: { session_id: sessionId, cause: errorMessage(error) } });
   }
-  if (!session) return fail("auth.wait", "LOGIN_SESSION_NOT_FOUND", "本地登录会话不存在或已失效。");
+  if (!session) return fail("auth.wait", "LOGIN_SESSION_NOT_FOUND", "本地登录会话不存在或已失效。", { details: { session_id: sessionId } });
 
   return pollToken(runtime, "auth.wait", session.tokenURL, options);
 }
@@ -184,10 +184,10 @@ async function pollToken(runtime: Runtime, command: string, tokenURL: string, op
     const code = typeof data.code === "string" ? data.code : "";
     const message = typeof data.error === "string" ? data.error : "";
     if (response.status === 410 || code === "LOGIN_EXPIRED" || message.includes("过期")) {
-      return fail(command, "LOGIN_EXPIRED", "登录会话已过期，请重新运行 auth login。");
+      return fail(command, "LOGIN_EXPIRED", "登录会话已过期，请重新运行 auth login。", { details: { token_url: tokenURL, status: response.status, response: data } });
     }
     if (response.status === 403 || code === "LOGIN_DENIED") {
-      return fail(command, "LOGIN_DENIED", "用户拒绝了本次登录。");
+      return fail(command, "LOGIN_DENIED", "用户拒绝了本次登录。", { details: { token_url: tokenURL, status: response.status, response: data } });
     }
     await runtime.sleep(options.intervalMs);
   }
@@ -198,8 +198,8 @@ async function status(runtime: Runtime): Promise<CliResult> {
   let token: string | null;
   try {
     token = await readToken(runtime.env);
-  } catch {
-    return fail("auth.status", "CONFIG_READ_FAILED", "无法读取本地 token。");
+  } catch (error) {
+    return fail("auth.status", "CONFIG_READ_FAILED", "无法读取本地 token。", { details: { cause: errorMessage(error) } });
   }
   if (!token) return ok("auth.status", { logged_in: false }, "当前未登录 BYRDocs。");
   const claims = decodeJwtPayload(token);
@@ -215,8 +215,8 @@ async function status(runtime: Runtime): Promise<CliResult> {
 async function logout(runtime: Runtime): Promise<CliResult> {
   try {
     await clearAuthFiles(runtime.env);
-  } catch {
-    return fail("auth.logout", "CONFIG_WRITE_FAILED", "无法删除本地登录信息。");
+  } catch (error) {
+    return fail("auth.logout", "CONFIG_WRITE_FAILED", "无法删除本地登录信息。", { details: { cause: errorMessage(error) } });
   }
   return ok("auth.logout", { logged_in: false }, "已退出 BYRDocs 登录。");
 }
@@ -228,8 +228,8 @@ async function saveToken(runtime: Runtime, command: string, token: string): Prom
   }
   try {
     await writeToken(runtime.env, token);
-  } catch {
-    return fail(command, "AUTH_TOKEN_SAVE_FAILED", "登录成功，但无法保存本地 token。");
+  } catch (error) {
+    return fail(command, "AUTH_TOKEN_SAVE_FAILED", "登录成功，但无法保存本地 token。", { details: { cause: errorMessage(error) } });
   }
   return ok(command, { status: "logged_in", logged_in: true, ...claimsStatus(claims) }, `BYRDocs 登录成功：${claims.id}`);
 }

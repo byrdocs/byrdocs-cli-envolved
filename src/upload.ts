@@ -61,7 +61,12 @@ export async function uploadCommand(runtime: Runtime, args: string[]): Promise<C
     return uploadFailure(start.code, start.status, start.body);
   }
   const uploadId = typeof start.body.uploadId === "string" ? start.body.uploadId : null;
-  if (!uploadId) return fail("upload", "UPLOAD_FAILED", "上传初始化返回格式不符合预期。", { retryable: true });
+  if (!uploadId) {
+    return fail("upload", "UPLOAD_FAILED", "上传初始化返回格式不符合预期。", {
+      retryable: true,
+      details: { endpoint: apiUrl(runtime.env, "/api/r2/mpu-start"), key, response: start.body }
+    });
+  }
 
   const parts: Array<{ partNumber: number; etag: string }> = [];
   let partNumber = 1;
@@ -77,7 +82,12 @@ export async function uploadCommand(runtime: Runtime, args: string[]): Promise<C
       const part = await apiJson(runtime, "/api/r2/mpu-uploadpart", token, { method: "PUT", body: form });
       if (!part.ok) return uploadFailure(part.code, part.status, part.body);
       const etag = typeof part.body.etag === "string" ? part.body.etag : null;
-      if (!etag) return fail("upload", "UPLOAD_FAILED", "上传分片返回格式不符合预期。", { retryable: true });
+      if (!etag) {
+        return fail("upload", "UPLOAD_FAILED", "上传分片返回格式不符合预期。", {
+          retryable: true,
+          details: { endpoint: apiUrl(runtime.env, "/api/r2/mpu-uploadpart"), key, upload_id: uploadId, part_number: partNumber, response: part.body }
+        });
+      }
       parts.push({ partNumber, etag });
       partNumber += 1;
     }
