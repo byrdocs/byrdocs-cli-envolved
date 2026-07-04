@@ -239,7 +239,7 @@ test("help command and --help return usage successfully", async () => {
   assert.equal(noArgs.json.command, "help");
 });
 
-test("text success output includes structured data, not only a terse message", async () => {
+test("text success output is human-readable, not a raw data dump", async () => {
   const search = await runCliText(["search", "高等数学"], {
     fetch: async () =>
       jsonResponse({
@@ -254,10 +254,12 @@ test("text success output includes structured data, not only a terse message", a
       })
   });
   assert.equal(search.code, 0);
-  assert.match(search.stdout, /找到 1 条结果/);
-  assert.match(search.stdout, /query: 高等数学/);
-  assert.match(search.stdout, /title: 高等数学/);
-  assert.match(search.stdout, /url: https:\/\/byrdocs\.org\/files\//);
+  assert.match(search.stdout, /搜索完成：高等数学/);
+  assert.match(search.stdout, /返回结果：1 条/);
+  assert.match(search.stdout, /1\. 高等数学/);
+  assert.match(search.stdout, /链接：https:\/\/byrdocs\.org\/files\//);
+  assert.doesNotMatch(search.stdout, /query:/);
+  assert.doesNotMatch(search.stdout, /title:/);
 
   const dir = await tempDir();
   const md5 = "e4d909c290d0fb1ca068ffaddf22cbd0";
@@ -265,8 +267,10 @@ test("text success output includes structured data, not only a terse message", a
   const init = await runCliText(["meta", "init", `${md5}.pdf`, "--type", "book", "--out", yaml], { dir });
   assert.equal(init.code, 0);
   assert.match(init.stdout, /已生成 metadata 模板/);
-  assert.match(init.stdout, /needs_user_input:/);
-  assert.match(init.stdout, /schema_source:/);
+  assert.match(init.stdout, /模板路径：/);
+  assert.match(init.stdout, /schema 来源：/);
+  assert.match(init.stdout, /需要补全的字段：/);
+  assert.doesNotMatch(init.stdout, /needs_user_input:/);
 });
 
 test("upload maps FILE_EXISTS to a successful deduplicated result", async () => {
