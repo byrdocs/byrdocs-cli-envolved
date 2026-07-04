@@ -41,7 +41,7 @@ node dist/cli.js auth login
 node dist/cli.js upload ./file.pdf
 node dist/cli.js download <file-ref> --output ./file.pdf
 node dist/cli.js meta schema
-node dist/cli.js search "keyword"
+node dist/cli.js search "keyword"   # 简单 fallback；agent 搜索优先看 skill 包内 references/search.md
 ```
 
 常用命令：
@@ -51,7 +51,7 @@ node dist/cli.js search "keyword"
 - `upload <file.pdf|file.zip>`：上传文件并返回 md5/key。
 - `download <file-ref> --output <path>`：下载文件到本地路径。
 - `meta schema|init|validate|preview`：生成、校验和预览 metadata YAML。
-- `search <query>`：调用 BYRDocs 搜索接口。
+- `search <query>`：简单调用 BYRDocs 搜索接口。Agent 场景优先参考 skill 包内 `references/search.md` 使用搜索 MCP 或 HTTP API；线上 `https://search.byrdocs.org/llms.txt` 是上游来源。
 
 加 `--json` 可以得到机器可读输出。`--api-base` 和 `--search-url` 可用于
 测试时覆盖默认 BYRDocs 接口地址。

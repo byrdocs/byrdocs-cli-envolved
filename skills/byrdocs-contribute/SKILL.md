@@ -5,11 +5,12 @@ description: 帮助普通用户通过 Agent 向 BYRDocs 贡献资料。适用于
 
 # BYRDocs 贡献流程
 
-用这个 skill 帮普通用户完成一次 BYRDocs 资料贡献。CLI 负责登录、上传、metadata 模板、校验、预览、搜索等确定性动作；Agent 负责理解资料、询问用户、编辑 YAML、使用 GitHub 创建 PR。
+用这个 skill 帮普通用户完成一次 BYRDocs 资料贡献。CLI 负责登录、上传、metadata 模板、校验、预览等确定性动作；搜索按包内 `references/search.md` 使用；Agent 负责理解资料、询问用户、编辑 YAML、使用 GitHub 创建 PR。
 
 ## 基本原则
 
 - BYRDocs 相关动作优先使用新 BYRDocs CLI。不要使用 `byrdocs-publish`、旧上传工具、旧 token 路径、浏览器 cookie 或网页抓取状态。
+- 搜索资料时优先读取包内 `references/search.md`，使用其中说明的 MCP 或 HTTP API。`byrdocs search` 只是简单 fallback，不应该优先使用。线上 `https://search.byrdocs.org/llms.txt` 只作为上游来源和刷新参考。
 - Agent 调 CLI 时，只要命令支持，就必须加 `--json`。只解析 stdout 里的 JSON object；stderr 只当日志和进度看。
 - 不要索要、接触或保存校园网密码。只能展示 `byrdocs auth login --json` 返回的登录链接，让用户自己在浏览器完成登录。
 - 不要把 token、cookie、本地隐私路径、JWT claims、学号、GitHub access token 等敏感信息写进 metadata、commit、PR body、评论或最终回复。
@@ -75,7 +76,7 @@ JSON 模式约定：
 - 如果命令失败且 stdout 不是合法 BYRDocs JSON，不要臆测 `error.code`。把它当作工具执行失败，优先检查 CLI 是否安装、Node/npm/npx 是否可用、网络是否可达、命令路径是否正确、CLI 版本是否过旧。
 - Agent 调 CLI 不得依赖交互式 prompt；需要用户动作时，应由 CLI 返回 JSON 中的用户动作状态，Agent 再转述给用户。
 
-开始贡献前确认 CLI 支持当前流程需要的能力。优先运行 `byrdocs doctor --json`；如果当前 CLI 支持 `byrdocs capabilities --json`，用它检查命令能力。若 `schema_version` 不是 `byrdocs.cli.v1`，或缺少 `auth login`、`auth wait`、`auth status`、`upload`、`meta schema`、`meta init`、`meta validate`、`meta preview`、`search`，停止并提示用户升级 CLI。
+开始贡献前确认 CLI 支持当前流程需要的能力。优先运行 `byrdocs doctor --json`；如果当前 CLI 支持 `byrdocs capabilities --json`，用它检查命令能力。若 `schema_version` 不是 `byrdocs.cli.v1`，或缺少 `auth login`、`auth wait`、`auth status`、`upload`、`meta schema`、`meta init`、`meta validate`、`meta preview`，停止并提示用户升级 CLI。
 
 常用命令入口：
 
@@ -89,7 +90,6 @@ byrdocs meta schema --json
 byrdocs meta init <file-ref> --type <type> --out metadata/<md5>.yml --json
 byrdocs meta validate metadata/<md5>.yml --json
 byrdocs meta preview metadata/<md5>.yml --json
-byrdocs search "<query>" --limit 5 --json
 ```
 
 ## 背景与假设
@@ -181,7 +181,15 @@ byrdocs meta schema --json
 
 3. 了解用户要贡献的文件。根据文件内容、文件名、当前 schema 和用户说明判断类型是 `book`、`test` 还是 `doc`；信息不足时先问用户。可以读取 PDF 首页、封面、目录页、文件名和说明文字来辅助判断。对 ZIP，只查看文件列表、README 和必要的少量文本文件；不要执行压缩包内脚本或打开可执行文件。
 
-4. 搜索可能重复的资料：
+4. 搜索可能重复的资料。先读取并遵循包内搜索说明：
+
+```text
+references/search.md
+```
+
+如果当前 agent 支持 MCP，优先连接 `https://search.byrdocs.org/mcp` 并调用 `search_files`。没有 MCP 时，直接 `POST https://search.byrdocs.org/api/search`，必要时使用 `type`、`jmespath`、`limit` 做结构化筛选。只有怀疑包内说明过期或服务行为变化时，才打开 `https://search.byrdocs.org/llms.txt` 确认最新契约。
+
+只有在不能直接使用 MCP 或 HTTP API 时，才退回 CLI 的简单搜索封装：
 
 ```bash
 byrdocs search "<书名/课程/ISBN/年份等关键词>" --limit 5 --json
