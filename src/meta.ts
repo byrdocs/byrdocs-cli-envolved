@@ -1,10 +1,12 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { Ajv, type AnySchema, type ErrorObject } from "ajv";
+import addFormatsModule from "ajv-formats";
 import YAML from "yaml";
 import type { Runtime } from "./config.js";
 import { parseFileRef, type FileRef } from "./file-ref.js";
 import { apiUrl } from "./http.js";
-import { fail, ok, type CliResult, type WarningItem } from "./output.js";
+import { fail, ok, type CliResult } from "./output.js";
 
 type MetaType = "book" | "doc" | "test";
 type Diagnostic = {
@@ -18,39 +20,17 @@ type SchemaInfo = {
   description: string;
   required: string[];
   filetypes: string[];
-  source: "remote" | "fallback";
+  source: "remote";
   schema_url: string;
-  raw_schema?: unknown;
+  raw_schema: unknown;
 };
 
 const META_TYPES = ["book", "doc", "test"] as const;
 
-const FALLBACK_TYPES: Record<MetaType, { description: string; required: string[]; filetypes: string[] }> = {
-  book: {
-    description: "教材、图书类资料",
-    required: ["$.id", "$.url", "$.data.title", "$.data.authors", "$.data.isbn", "$.data.filetype"],
-    filetypes: ["pdf"]
-  },
-  doc: {
-    description: "课件、题库、知识点、答案等课程资料",
-    required: ["$.id", "$.url", "$.data.title", "$.data.course", "$.data.content", "$.data.filetype"],
-    filetypes: ["pdf", "zip"]
-  },
-  test: {
-    description: "考试原题或答案",
-    required: [
-      "$.id",
-      "$.url",
-      "$.data.title",
-      "$.data.course.name",
-      "$.data.time.start",
-      "$.data.time.end",
-      "$.data.content",
-      "$.data.filetype",
-      "$.data.filesize"
-    ],
-    filetypes: ["pdf"]
-  }
+const TYPE_DESCRIPTIONS: Record<MetaType, string> = {
+  book: "教材、图书类资料",
+  doc: "课件、题库、知识点、答案等课程资料",
+  test: "考试原题或答案"
 };
 
 export async function metaCommand(runtime: Runtime, args: string[]): Promise<CliResult> {
@@ -66,14 +46,20 @@ async function schema(runtime: Runtime, args: string[]): Promise<CliResult> {
   const type = optionValue(args, "--type");
   if (type) {
     if (!isMetaType(type)) return fail("meta.schema", "SCHEMA_NOT_FOUND", "未知 metadata 类型。");
-    const loaded = await loadSchema(runtime, type);
-    return ok("meta.schema", { ...loaded.info, shape: loaded.info.raw_schema ?? schemaShape(type) }, `metadata 类型：${type}`, loaded.warnings);
+    const loaded = await loadSchema(runtime, type, "meta.schema");
+    if (!loaded.ok) return loaded.result;
+    return ok("meta.schema", { ...loaded.info, shape: loaded.info.raw_schema }, `metadata 类型：${type}`);
   }
-  const loaded = await Promise.all(META_TYPES.map((item) => loadSchema(runtime, item)));
+  const loaded = [];
+  for (const item of META_TYPES) {
+    const result = await loadSchema(runtime, item, "meta.schema");
+    if (!result.ok) return result.result;
+    loaded.push(result.info);
+  }
   return ok(
     "meta.schema",
     {
-      types: loaded.map(({ info }) => ({
+      types: loaded.map((info) => ({
         type: info.type,
         description: info.description,
         filetypes: info.filetypes,
@@ -81,8 +67,7 @@ async function schema(runtime: Runtime, args: string[]): Promise<CliResult> {
         schema_url: info.schema_url
       }))
     },
-    "可用类型：book、doc、test",
-    loaded.flatMap((item) => item.warnings)
+    "可用类型：book、doc、test"
   );
 }
 
@@ -92,14 +77,15 @@ async function init(runtime: Runtime, args: string[]): Promise<CliResult> {
   const out = optionValue(args, "--out");
   if (!input || !type || !out) return fail("meta.init", "INVALID_ARGUMENT", "用法：byrdocs meta init <file-ref> --type <type> --out <path>");
   if (!isMetaType(type)) return fail("meta.init", "SCHEMA_NOT_FOUND", "未知 metadata 类型。");
-  const loaded = await loadSchema(runtime, type);
+  const loaded = await loadSchema(runtime, type, "meta.init");
+  if (!loaded.ok) return loaded.result;
   const ref = parseFileRef(input);
   if (!ref) return fail("meta.init", "INVALID_FILE_REF", "文件引用格式不正确。");
   if (!loaded.info.filetypes.includes(ref.ext)) {
     return fail("meta.init", "INVALID_FILE_REF", `${type} 类型不支持 ${ref.ext} 文件。`);
   }
 
-  const doc = template(type, ref);
+  const doc = templateFromSchema(type, ref, loaded.info.raw_schema);
   try {
     await fs.mkdir(path.dirname(path.resolve(out)), { recursive: true });
     await fs.writeFile(out, YAML.stringify(doc), "utf8");
@@ -116,8 +102,7 @@ async function init(runtime: Runtime, args: string[]): Promise<CliResult> {
       schema_url: loaded.info.schema_url,
       needs_user_input: needsUserInput(loaded.info)
     },
-    `已生成 metadata 模板：${out}`,
-    loaded.warnings
+    `已生成 metadata 模板：${out}`
   );
 }
 
@@ -133,15 +118,13 @@ async function validate(runtime: Runtime, args: string[]): Promise<CliResult> {
   if (errors.length) {
     return fail("meta.validate", "METADATA_VALIDATION_FAILED", "metadata 存在校验错误，请根据 diagnostics 修正后重试。", {
       retryable: true,
-      diagnostics,
-      warnings: loaded.warnings
+      diagnostics
     });
   }
   return ok(
     "meta.validate",
     { valid: true, diagnostics, schema_source: loaded.info.source, schema_url: loaded.info.schema_url },
-    "metadata 校验通过。",
-    loaded.warnings
+    "metadata 校验通过。"
   );
 }
 
@@ -165,84 +148,48 @@ async function preview(runtime: Runtime, args: string[]): Promise<CliResult> {
       schema_source: loaded.info.source,
       schema_url: loaded.info.schema_url
     },
-    "metadata 预览已生成。",
-    loaded.warnings
+    "metadata 预览已生成。"
   );
 }
 
-function template(type: MetaType, ref: FileRef): unknown {
-  const base = {
+function templateFromSchema(type: MetaType, ref: FileRef, schema: unknown): unknown {
+  const doc: { type: MetaType; id: string; url: string; data: Record<string, unknown> } = {
     type,
     id: ref.md5,
-    url: `https://byrdocs.org/files/${ref.key}`
+    url: `https://byrdocs.org/files/${ref.key}`,
+    data: {}
   };
-  if (type === "book") {
-    return { ...base, data: { title: "", authors: [], translators: [], edition: "", publisher: "", publish_year: "", isbn: [], filetype: "pdf" } };
+  const raw = asRecord(schema);
+  const dataSchema = asRecord(asRecord(asRecord(raw.properties).data));
+  const dataProperties = asRecord(dataSchema.properties);
+  for (const field of stringArray(dataSchema.required)) {
+    doc.data[field] = templateValue(dataProperties[field], ref);
   }
-  if (type === "doc") {
-    return { ...base, data: { title: "", filetype: ref.ext, course: [{ type: "", name: "" }], content: [] } };
-  }
-  return {
-    ...base,
-    data: {
-      title: "",
-      college: [],
-      course: { type: "", name: "" },
-      time: { start: "", end: "", semester: "", stage: "" },
-      filetype: "pdf",
-      content: [],
-      filesize: null
-    }
-  };
+  return doc;
 }
 
-function schemaShape(type: MetaType): unknown {
-  if (type === "book") {
-    return { type: "book", id: "md5", url: "https://byrdocs.org/files/<md5>.pdf", data: { title: "string", authors: "string[]", isbn: "string[]", filetype: "pdf" } };
+function templateValue(schema: unknown, ref: FileRef): unknown {
+  const node = asRecord(schema);
+  if (node.enum && stringArray(node.enum).includes(ref.ext)) return ref.ext;
+  if (node.type === "array") return [];
+  if (node.type === "object") {
+    const value: Record<string, unknown> = {};
+    const properties = asRecord(node.properties);
+    for (const field of stringArray(node.required)) {
+      value[field] = templateValue(properties[field], ref);
+    }
+    return value;
   }
-  if (type === "doc") {
-    return { type: "doc", id: "md5", url: "https://byrdocs.org/files/<md5>.<pdf|zip>", data: { title: "string", filetype: "pdf|zip", course: "array", content: "array" } };
-  }
-  return { type: "test", id: "md5", url: "https://byrdocs.org/files/<md5>.pdf", data: { title: "string", course: { name: "string" }, time: { start: "string", end: "string" }, content: "array", filesize: "number", filetype: "pdf" } };
+  return "";
 }
 
 function validateObject(value: unknown, schema: SchemaInfo): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
-  if (!isRecord(value)) {
-    return [{ level: "error", code: "METADATA_VALIDATION_FAILED", path: "$", message: "YAML 顶层必须是对象。" }];
-  }
-  const type = value.type;
-  if (!isMetaType(type)) {
-    return [{ level: "error", code: "SCHEMA_NOT_FOUND", path: "$.type", message: "未知或缺失 metadata 类型。" }];
-  }
-  if (type !== schema.type) {
-    diagnostics.push({ level: "error", code: "SCHEMA_NOT_FOUND", path: "$.type", message: "metadata 类型与 schema 不一致。" });
-  }
-  for (const field of schema.required) {
-    if (isEmpty(pathValue(value, field))) {
-      diagnostics.push({ level: "error", code: "REQUIRED_FIELD_MISSING", path: field, message: "必填字段为空。" });
-    }
-  }
-  const id = typeof value.id === "string" ? value.id : "";
-  if (!/^[0-9a-f]{32}$/i.test(id)) {
-    diagnostics.push({ level: "error", code: "INVALID_FILE_REF", path: "$.id", message: "id 必须是 32 位 md5。" });
-  }
-  const url = typeof value.url === "string" ? value.url : "";
-  const ref = parseFileRef(url);
-  if (!ref) {
-    diagnostics.push({ level: "error", code: "INVALID_FILE_REF", path: "$.url", message: "url 必须是 https://byrdocs.org/files/<md5>.<pdf|zip>。" });
-  } else {
-    if (id && ref.md5 !== id.toLowerCase()) {
-      diagnostics.push({ level: "error", code: "KEY_MD5_MISMATCH", path: "$.url", message: "url 中的 md5 与 id 不一致。" });
-    }
-    const filetype = pathValue(value, "$.data.filetype");
-    if (typeof filetype === "string" && filetype !== ref.ext) {
-      diagnostics.push({ level: "error", code: "KEY_MD5_MISMATCH", path: "$.data.filetype", message: "filetype 与 url 扩展名不一致。" });
-    }
-  }
-  const filetype = pathValue(value, "$.data.filetype");
-  if (typeof filetype === "string" && !schema.filetypes.includes(filetype)) {
-    diagnostics.push({ level: "error", code: "METADATA_VALIDATION_FAILED", path: "$.data.filetype", message: `${type} 类型不支持 ${filetype} 文件。` });
+  const ajv = new Ajv({ allErrors: true, strict: false });
+  (addFormatsModule as unknown as (instance: Ajv) => Ajv)(ajv);
+  const validate = ajv.compile(closedSchema(schema.raw_schema) as AnySchema);
+  if (!validate(value)) {
+    diagnostics.push(...(validate.errors ?? []).map(schemaErrorDiagnostic));
   }
   return diagnostics;
 }
@@ -294,43 +241,35 @@ async function schemaForValue(
   runtime: Runtime,
   value: unknown,
   command: string
-): Promise<{ ok: true; info: SchemaInfo; warnings: WarningItem[] } | { ok: false; result: CliResult }> {
+): Promise<{ ok: true; info: SchemaInfo } | { ok: false; result: CliResult }> {
   if (!isRecord(value) || !isMetaType(value.type)) {
     return { ok: false, result: fail(command, "SCHEMA_NOT_FOUND", "未知或缺失 metadata 类型。") };
   }
-  return { ok: true, ...(await loadSchema(runtime, value.type)) };
+  return loadSchema(runtime, value.type, command);
 }
 
-async function loadSchema(runtime: Runtime, type: MetaType): Promise<{ info: SchemaInfo; warnings: WarningItem[] }> {
+async function loadSchema(runtime: Runtime, type: MetaType, command: string): Promise<{ ok: true; info: SchemaInfo } | { ok: false; result: CliResult }> {
   const schema_url = schemaUrl(runtime, type);
   try {
     const response = await runtime.fetch(schema_url);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const raw = await response.text();
     const parsed = YAML.parse(raw);
-    return { info: schemaInfoFromRemote(type, schema_url, parsed), warnings: [] };
+    return { ok: true, info: schemaInfoFromRemote(type, schema_url, parsed) };
   } catch (error) {
-    const fallback = fallbackSchema(type, schema_url);
     return {
-      info: fallback,
-      warnings: [
-        {
-          code: "SCHEMA_REMOTE_UNAVAILABLE",
-          message: "无法获取最新 metadata schema，已使用内置兜底 schema。",
-          details: errorMessage(error),
-          suggestions: ["稍后重试以获取最新 schema。", "如果正在离线工作，可以先按兜底 schema 修改，提交前再重新 validate。"]
-        }
-      ]
+      ok: false,
+      result: fail(command, "SCHEMA_REMOTE_UNAVAILABLE", "无法获取线上 metadata schema，不能进行校验或生成模板。", {
+        retryable: true,
+        details: { schema_url, cause: errorMessage(error) },
+        suggestions: ["检查网络连接和 BYRDocs 服务状态。", "稍后重试，确保本地结果与线上 schema 一致。"]
+      })
     };
   }
 }
 
 function schemaUrl(runtime: Runtime, type: MetaType): string {
   return apiUrl(runtime.env, `/schema/${type}.yaml`);
-}
-
-function fallbackSchema(type: MetaType, schema_url: string): SchemaInfo {
-  return { type, ...FALLBACK_TYPES[type], source: "fallback", schema_url, raw_schema: schemaShape(type) };
 }
 
 function schemaInfoFromRemote(type: MetaType, schema_url: string, raw_schema: unknown): SchemaInfo {
@@ -343,7 +282,7 @@ function schemaInfoFromRemote(type: MetaType, schema_url: string, raw_schema: un
   if (!filetypes.length) throw new Error("schema missing data.filetype enum");
   return {
     type,
-    description: FALLBACK_TYPES[type].description,
+    description: TYPE_DESCRIPTIONS[type],
     required: collectRequired(raw, "$"),
     filetypes,
     source: "remote",
@@ -366,6 +305,45 @@ function collectRequired(schema: unknown, basePath: string): string[] {
     }
   }
   return Array.from(new Set(paths));
+}
+
+function closedSchema(schema: unknown): unknown {
+  const node = asRecord(schema);
+  if (!Object.keys(node).length) return schema;
+  const copy: Record<string, unknown> = { ...node };
+  const properties = asRecord(copy.properties);
+
+  if ((copy.type === "object" || Object.keys(properties).length > 0) && copy.additionalProperties === undefined) {
+    copy.additionalProperties = false;
+  }
+  if (Object.keys(properties).length > 0) {
+    copy.properties = Object.fromEntries(Object.entries(properties).map(([key, value]) => [key, closedSchema(value)]));
+  }
+  if (copy.items !== undefined) {
+    copy.items = closedSchema(copy.items);
+  }
+  return copy;
+}
+
+function schemaErrorDiagnostic(error: ErrorObject): Diagnostic {
+  const path = jsonPointerToPath(error.instancePath || "");
+  const missing = typeof error.params.missingProperty === "string" ? error.params.missingProperty : null;
+  if (error.keyword === "required" && missing) {
+    return { level: "error", code: "REQUIRED_FIELD_MISSING", path: path === "$" ? `$.${missing}` : `${path}.${missing}`, message: "必填字段缺失或为空。" };
+  }
+  if (error.keyword === "additionalProperties" && typeof error.params.additionalProperty === "string") {
+    const key = error.params.additionalProperty;
+    return { level: "error", code: "UNKNOWN_FIELD", path: path === "$" ? `$.${key}` : `${path}.${key}`, message: "线上 schema 未声明此字段，CI 会拒绝。" };
+  }
+  return { level: "error", code: "METADATA_VALIDATION_FAILED", path, message: error.message ?? "不符合线上 schema。" };
+}
+
+function jsonPointerToPath(pointer: string): string {
+  if (!pointer) return "$";
+  return `$${pointer.split("/").slice(1).map((part) => {
+    const text = part.replace(/~1/g, "/").replace(/~0/g, "~");
+    return /^\d+$/.test(text) ? `[${text}]` : `.${text}`;
+  }).join("")}`;
 }
 
 function pathValue(value: unknown, pointer: string): unknown {

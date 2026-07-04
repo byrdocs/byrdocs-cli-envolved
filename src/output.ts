@@ -113,7 +113,7 @@ function defaultSuggestions(code: string): string[] {
       return ["运行 byrdocs auth logout --json 后重新登录。", "把登录链接交给用户，并明确需要选择 BUPT 统一认证登录，而不是 GitHub 登录。"];
     case "API_UNREACHABLE":
     case "SEARCH_API_UNREACHABLE":
-      return ["检查网络连接和 BYRDocs 服务状态。", "如果使用测试环境，检查 --api-base 或 --search-url 是否正确。"];
+      return ["检查网络连接和 BYRDocs 服务状态。", "确认是否在禁用网络权限的沙盒中运行", "如果使用测试环境，检查 --api-base 或 --search-url 是否正确。"];
     case "LOGIN_TIMEOUT":
       return ["询问用户是否仍在浏览器登录。", "如果用户仍在登录，使用原 session_id 或 poll_command 并加大 --timeout-seconds 重试。", "如果用户已经关闭页面或不确定，重新运行 byrdocs auth login --json 创建新会话。"];
     case "LOGIN_EXPIRED":

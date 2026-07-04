@@ -157,7 +157,7 @@ file-ref 支持 32 位 md5、<md5>.pdf|zip、https://byrdocs.org/files/<key>。�
     text: `用法：byrdocs meta <schema|init|validate|preview> [args] [--json]
 
 子命令：
-  meta schema [--type book|doc|test]       查看 metadata schema（远程优先，本地兜底）
+  meta schema [--type book|doc|test]       实时拉取线上 metadata schema
   meta init <file-ref> --type <type> --out <path>
                                            生成 YAML 模板
   meta validate <yaml>                     校验 YAML

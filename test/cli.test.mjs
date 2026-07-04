@@ -400,7 +400,7 @@ test("meta init, validate, preview and YAML parse errors", async () => {
   const invalid = await runCli(["meta", "validate", yaml, "--json"], { dir });
   assert.equal(invalid.code, 1);
   assert.equal(invalid.json.error.code, "METADATA_VALIDATION_FAILED");
-  assert.ok(invalid.json.error.diagnostics.some((item) => item.code === "REQUIRED_FIELD_MISSING"));
+  assert.ok(invalid.json.error.diagnostics.length > 0);
   assert.ok(invalid.json.error.suggestions.some((item) => item.includes("diagnostics")));
 
   const preview = await runCli(["meta", "preview", yaml, "--json"], { dir });
@@ -412,6 +412,37 @@ test("meta init, validate, preview and YAML parse errors", async () => {
   const parse = await runCli(["meta", "validate", badYaml, "--json"], { dir });
   assert.equal(parse.code, 1);
   assert.equal(parse.json.error.code, "YAML_PARSE_ERROR");
+});
+
+test("meta validate fails closed when online schema cannot be fetched", async () => {
+  const dir = await tempDir();
+  const yaml = path.join(dir, "test.yaml");
+  await writeFile(
+    yaml,
+    `type: test
+id: e4d909c290d0fb1ca068ffaddf22cbd0
+url: https://byrdocs.org/files/e4d909c290d0fb1ca068ffaddf22cbd0.pdf
+data:
+  course:
+    name: 高等数学A（上）
+  time:
+    start: "2024"
+    end: "2025"
+  filetype: pdf
+  content:
+    - 原题
+`,
+    "utf8"
+  );
+  const result = await runCli(["meta", "validate", yaml, "--json"], {
+    dir,
+    fetch: async () => {
+      throw new Error("network down");
+    }
+  });
+  assert.equal(result.code, 1);
+  assert.equal(result.json.error.code, "SCHEMA_REMOTE_UNAVAILABLE");
+  assert.match(result.json.error.details.schema_url, /\/schema\/test\.yaml$/);
 });
 
 test("meta schema prefers remote schema and validates against latest required fields", async () => {
@@ -463,6 +494,13 @@ required: [id, url, type, data]
   assert.ok(schema.json.data.required.includes("$.data.time.start"));
   assert.equal(schema.json.data.required.includes("$.data.filesize"), false);
 
+  const generated = path.join(dir, `${md5}-generated.yaml`);
+  const init = await runCli(["meta", "init", `${md5}.pdf`, "--type", "test", "--out", generated, "--json"], { dir, fetch });
+  assert.equal(init.code, 0);
+  const generatedText = await readFile(generated, "utf8");
+  assert.doesNotMatch(generatedText, /^\s+title:/m);
+  assert.doesNotMatch(generatedText, /^\s+filesize:/m);
+
   const yaml = path.join(dir, `${md5}.yaml`);
   await writeFile(
     yaml,
@@ -484,6 +522,31 @@ data:
   const valid = await runCli(["meta", "validate", yaml, "--json"], { dir, fetch });
   assert.equal(valid.code, 0);
   assert.equal(valid.json.data.schema_source, "remote");
+
+  await writeFile(
+    yaml,
+    `type: test
+id: ${md5}
+url: https://byrdocs.org/files/${md5}.pdf
+data:
+  title: 不应提交的派生标题
+  course:
+    name: 高等数学A（上）
+  time:
+    start: "2024"
+    end: "2025"
+  filetype: pdf
+  content:
+    - 原题
+  filesize: 12345
+`,
+    "utf8"
+  );
+  const invalid = await runCli(["meta", "validate", yaml, "--json"], { dir, fetch });
+  assert.equal(invalid.code, 1);
+  assert.equal(invalid.json.error.code, "METADATA_VALIDATION_FAILED");
+  assert.ok(invalid.json.error.diagnostics.some((item) => item.code === "UNKNOWN_FIELD" && item.path === "$.data.title"));
+  assert.ok(invalid.json.error.diagnostics.some((item) => item.code === "UNKNOWN_FIELD" && item.path === "$.data.filesize"));
 });
 
 test("search posts keyword, limit and optional type", async () => {
@@ -513,7 +576,7 @@ async function runCli(args, options = {}) {
     stderr: { write: (text) => (stderr += String(text)) },
     env,
     cwd: dir,
-    fetch: options.fetch || (async () => jsonResponse({ success: true })),
+    fetch: options.fetch || defaultFetch,
     sleep: async () => {}
   });
   return { code, stdout, stderr, json: JSON.parse(stdout) };
@@ -535,7 +598,7 @@ async function runCliText(args, options = {}) {
     stderr: { write: (text) => (stderr += String(text)) },
     env,
     cwd: dir,
-    fetch: options.fetch || (async () => jsonResponse({ success: true })),
+    fetch: options.fetch || defaultFetch,
     sleep: async () => {}
   });
   return { code, stdout, stderr };
@@ -568,3 +631,138 @@ function textResponse(body, init = {}) {
     headers: { "content-type": "text/yaml" }
   });
 }
+
+async function defaultFetch(url) {
+  const pathname = new URL(String(url)).pathname;
+  if (pathname === "/schema/book.yaml") return textResponse(BOOK_SCHEMA);
+  if (pathname === "/schema/doc.yaml") return textResponse(DOC_SCHEMA);
+  if (pathname === "/schema/test.yaml") return textResponse(TEST_SCHEMA);
+  return jsonResponse({ success: true });
+}
+
+const BOOK_SCHEMA = `type: object
+properties:
+  id:
+    type: string
+    pattern: '^[0-9A-Za-z]{32}$'
+  url:
+    type: string
+    format: uri
+    pattern: '^https://byrdocs\\.org/files/[0-9A-Za-z]{32}\\.(pdf|zip)$'
+  type:
+    type: string
+    enum: [book]
+  data:
+    type: object
+    properties:
+      title:
+        type: string
+      authors:
+        type: array
+        items:
+          type: string
+        minItems: 1
+      isbn:
+        type: array
+        items:
+          type: string
+        minItems: 1
+      filetype:
+        type: string
+        enum: [pdf]
+    required: [title, authors, isbn, filetype]
+required: [id, url, type, data]
+`;
+
+const DOC_SCHEMA = `type: object
+properties:
+  id:
+    type: string
+  url:
+    type: string
+    format: uri
+  type:
+    type: string
+    enum: [doc]
+  data:
+    type: object
+    properties:
+      title:
+        type: string
+      filetype:
+        type: string
+        enum: [pdf, zip]
+      course:
+        type: array
+        items:
+          type: object
+          properties:
+            type:
+              type: string
+              enum: [本科, 研究生]
+            name:
+              type: string
+          required: [name]
+      content:
+        type: array
+        items:
+          type: string
+        minItems: 1
+    required: [title, filetype, course, content]
+required: [id, url, type, data]
+`;
+
+const TEST_SCHEMA = `type: object
+properties:
+  id:
+    type: string
+  url:
+    type: string
+    format: uri
+  type:
+    type: string
+    enum: [test]
+  data:
+    type: object
+    properties:
+      college:
+        type: array
+        items:
+          type: string
+      course:
+        type: object
+        properties:
+          type:
+            type: string
+            enum: [本科, 研究生]
+          name:
+            type: string
+        required: [name]
+      time:
+        type: object
+        properties:
+          start:
+            type: string
+            pattern: "^[0-9]{4}$"
+          end:
+            type: string
+            pattern: "^[0-9]{4}$"
+          semester:
+            type: string
+            enum: [First, Second]
+          stage:
+            type: string
+            enum: [期中, 期末]
+        required: [start, end]
+      filetype:
+        type: string
+        enum: [pdf]
+      content:
+        type: array
+        items:
+          type: string
+          enum: [原题, 答案]
+        minItems: 1
+    required: [course, time, filetype, content]
+required: [id, url, type, data]
+`;
