@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile, mkdir, access } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile, mkdir, access, symlink } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { pathToFileURL } from "node:url";
 import { decodeJwtPayload } from "../dist/auth.js";
-import { run } from "../dist/cli.js";
+import { isMainEntry, run } from "../dist/cli.js";
 import { configDir, sessionsDir, tokenPath } from "../dist/config.js";
 import { parseFileRef } from "../dist/file-ref.js";
 
@@ -20,6 +21,15 @@ test("file refs parse md5, key, url and reject invalid input", () => {
     filename: "Linear Algebra.pdf"
   });
   assert.equal(parseFileRef("https://example.com/files/nope.pdf"), null);
+});
+
+test("installed bin symlink is recognized as the CLI entrypoint", async () => {
+  const dir = await tempDir();
+  const bin = path.join(dir, "byrdocs");
+  const cli = path.resolve("dist/cli.js");
+  await symlink(cli, bin);
+
+  assert.equal(isMainEntry(bin, pathToFileURL(cli).href), true);
 });
 
 test("default config lives in ~/.byrdocs unless overridden", () => {

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { pathToFileURL } from "node:url";
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { authCommand } from "./auth.js";
 import { parseGlobalFlags } from "./args.js";
 import { defaultRuntime, type Runtime } from "./config.js";
@@ -192,8 +193,17 @@ file-ref 支持 32 位 md5、<md5>.pdf|zip、https://byrdocs.org/files/<key>。�
   }
 };
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isMainEntry(process.argv[1])) {
   run().then((code) => {
     process.exitCode = code;
   });
+}
+
+export function isMainEntry(entry: string | undefined, moduleUrl = import.meta.url): boolean {
+  if (!entry) return false;
+  try {
+    return realpathSync(entry) === realpathSync(fileURLToPath(moduleUrl));
+  } catch {
+    return false;
+  }
 }
