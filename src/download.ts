@@ -1,7 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { parseCommandArgs } from "./args.js";
-import { decodeJwtPayload } from "./auth.js";
 import { readToken, type Runtime } from "./config.js";
 import { parseFileRef } from "./file-ref.js";
 import { apiUrl, responseJson } from "./http.js";
@@ -25,8 +24,6 @@ export async function downloadCommand(runtime: Runtime, args: string[]): Promise
     return fail("download", "CONFIG_READ_FAILED", "无法读取本地 token。", { details: { cause: errorMessage(error) } });
   }
   if (!token) return fail("download", "NOT_LOGGED_IN", "请先运行 byrdocs auth login 登录。");
-  const claims = decodeJwtPayload(token);
-  if (!claims?.download) return fail("download", "BUPT_LOGIN_REQUIRED", "当前 token 没有下载权限，请使用 BUPT 统一认证登录。");
 
   const outputName = path.basename(output);
   const filename = ref.filename ?? (outputName || ref.key);

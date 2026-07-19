@@ -54,6 +54,11 @@ test("auth status decodes BUPT and GitHub JWT claims locally", async () => {
   assert.equal(github.json.data.provider, "github");
   assert.equal(github.json.data.can_download, false);
   assert.deepEqual(decodeJwtPayload(jwt({ id: "GitHub-1" })).id, "GitHub-1");
+
+  const githubText = await runCliText(["auth", "status"], { dir });
+  assert.match(githubText.stdout, /全局下载权限：否/);
+  assert.match(githubText.stdout, /仍可尝试下载自己上传的文件/);
+  assert.doesNotMatch(githubText.stdout, /下载资料需要 BUPT/);
 });
 
 test("auth rejects abandoned manual token commands", async () => {
@@ -294,7 +299,7 @@ test("upload maps FILE_EXISTS to a successful deduplicated result", async () => 
   assert.equal(calls.length, 1);
 });
 
-test("download distinguishes missing token and token without download capability", async () => {
+test("download lets the site authorize a GitHub token per file", async () => {
   const dir = await tempDir();
   const key = "e4d909c290d0fb1ca068ffaddf22cbd0.pdf";
   const missing = await runCli(["download", key, "--output", path.join(dir, "out.pdf"), "--json"], { dir });
@@ -304,17 +309,33 @@ test("download distinguishes missing token and token without download capability
 
   await saveToken(dir, jwt({ id: "GitHub-1" }));
   let called = false;
-  const github = await runCli(["download", key, "--output", path.join(dir, "out.pdf"), "--json"], {
+  const githubOutput = path.join(dir, "github-own.pdf");
+  const github = await runCli(["download", key, "--output", githubOutput, "--json"], {
     dir,
     fetch: async () => {
       called = true;
-      return new Response("nope", { status: 403 });
+      return new Response("own file", { status: 200, headers: { "content-type": "application/pdf" } });
     }
   });
-  assert.equal(github.code, 1);
-  assert.equal(github.json.error.code, "BUPT_LOGIN_REQUIRED");
-  assert.ok(github.json.error.suggestions.some((item) => item.includes("BUPT")));
-  assert.equal(called, false);
+  assert.equal(github.code, 0);
+  assert.equal(github.json.data.key, key);
+  assert.equal(called, true);
+  assert.equal(await readFile(githubOutput, "utf8"), "own file");
+
+  let deniedCalled = false;
+  const deniedOutput = path.join(dir, "github-other.pdf");
+  const denied = await runCli(["download", key, "--output", deniedOutput, "--json"], {
+    dir,
+    fetch: async () => {
+      deniedCalled = true;
+      return jsonResponse({ error: "未授权，请登录后重试", success: false }, { status: 401 });
+    }
+  });
+  assert.equal(deniedCalled, true);
+  assert.equal(denied.code, 1);
+  assert.equal(denied.json.error.code, "DOWNLOAD_UNAUTHORIZED");
+  assert.ok(denied.json.error.suggestions.some((item) => item.includes("BUPT")));
+  await assert.rejects(access(deniedOutput));
 });
 
 test("download uses site file route and maps site responses", async () => {

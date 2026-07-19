@@ -222,8 +222,10 @@ function authText(command: string, data: unknown, title: string | undefined): st
     `账号：${textValue(record.id)}`,
     `登录来源：${providerText(record.provider)}`,
     `上传权限：${yesNo(record.can_upload)}`,
-    `下载权限：${yesNo(record.can_download)}`,
-    record.can_download === true ? "下载权限正常。" : "下载资料需要 BUPT 统一认证登录。"
+    `全局下载权限：${yesNo(record.can_download)}`,
+    record.can_download === true
+      ? "可以请求所有允许下载的 BYRDocs 文件。"
+      : "仍可尝试下载自己上传的文件；其他文件可能需要 BUPT 统一认证登录。"
   ].join("\n");
 }
 
@@ -443,7 +445,7 @@ function humanLabel(key: string): string {
   const labels: Record<string, string> = {
     api_code: "API 代码",
     authors: "作者",
-    can_download: "下载权限",
+    can_download: "全局下载权限",
     can_upload: "上传权限",
     cause: "原因",
     command: "命令",
