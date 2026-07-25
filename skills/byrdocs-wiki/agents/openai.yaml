@@ -1,0 +1,4 @@
+interface:
+  display_name: "BYRDocs 维基真题"
+  short_description: "录入、修改、校验并贡献 BYRDocs 维基真题试卷内容。"
+  default_prompt: "使用 $byrdocs-wiki 录入、修改或贡献一份 BYRDocs 维基真题。"

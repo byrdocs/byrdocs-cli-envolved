@@ -1,11 +1,29 @@
 ---
 name: byrdocs
-description: 帮助普通用户通过 Agent 使用 BYRDocs。适用于用户想搜索 BYRDocs 教材/资料/试题、下载 BYRDocs 文件、登录 BYRDocs、上传文件、填写和校验 metadata、创建或更新 byrdocs/byrdocs-archive 的 GitHub PR、处理 BYRDocs 贡献 CI 或 review 反馈的场景。
+description: Use when 用户想搜索或下载 BYRDocs 主站教材/资料/试题、登录主站、上传 PDF/ZIP、填写或校验 archive metadata、创建或更新 byrdocs/byrdocs-archive PR，或处理该仓库的 CI 和 review。
 ---
 
-# BYRDocs 搜索、下载和贡献
+# BYRDocs 资料库搜索、下载和贡献
 
-用这个 Skill 搜索或下载 BYRDocs 资料，或完成一次资料贡献。搜索使用打包的公开搜索契约；CLI 负责登录、下载、上传、metadata 模板、校验和预览；Agent 负责结构化筛选、理解资料、询问用户、编辑 YAML 和使用 GitHub 创建 PR。
+用这个 Skill 搜索或下载 BYRDocs 主站资料，或向 `byrdocs/byrdocs-archive` 完成一次
+原始文件和 metadata 贡献。搜索使用打包的公开搜索契约；CLI 负责登录、下载、上传、
+metadata 模板、校验和预览；Agent 负责结构化筛选、理解资料、询问用户、编辑 YAML
+和使用 GitHub 创建 PR。
+
+## 先区分两种“贡献”
+
+| 用户目标 | 使用入口 |
+| --- | --- |
+| 搜索/下载主站资料、上传 PDF/ZIP、填写 archive metadata | 本 Skill |
+| 录入题目、修改维基页面、补答案、处理 MDX/题图、贡献 Neowiki PR | `byrdocs-wiki` |
+
+用户只说“贡献试题”且上下文不能判断时，只问类似：
+
+> 你希望把原始试卷文件上传到 BYR Docs 资料库，还是把试题整理成可阅读的维基真题页面？
+
+发现用户实际要编辑 `wiki.byrdocs.org` 页面、`exams/<试卷>/index.mdx`、答案或题图时，
+停止 archive 流程并转到 `byrdocs-wiki`。如果维基贡献只需要本 Skill 搜索、下载或确认
+来源 MD5，仍然由 `byrdocs-wiki` 负责总流程，本 Skill 只完成 archive 的子步骤。
 
 ## 基本原则
 
