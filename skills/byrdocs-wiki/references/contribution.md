@@ -88,6 +88,7 @@ Skill 内的 guide/README 足以理解规则和准备草稿。获得目标 check
 | 回忆稿 | 区分明确记得的题意、概述和猜测 | 补造数字、选项、分值或精确原文 |
 | 已有页面/review | 完整页面、相关资源、Git 历史和具体反馈 | 只看 diff 片段；未经核验照单全改 |
 | BYRDocs 主站 | canonical 文件、课程/时间匹配和 32 位小写 MD5 | 把 wiki URL、短链或标题当作来源 MD5 |
+| Typst/LaTeX/其他源码 | 用 curl 或 Raw 获取完整原始文本；识别模板函数（如 `#answer`、`#judge`）的全部参数，答案文件的隐藏解析字段（如第三参数）必须逐条提取 | 只用 WebFetch 获取摘要而丢失参数；只看答案符号忽略配套解析 |
 
 需要主站资料时，调用 `byrdocs` Skill 的搜索/下载能力，但由本 Skill 继续主持维基贡献。
 
@@ -137,9 +138,9 @@ exams/<学年开始-学年结束-学期-科目-阶段（备注）>/index.mdx
 
 - 题图、音频等资源通常与 `index.mdx` 同目录，文件名描述题号和用途；不放入 `public/`。
 - 每个 Figure/Audio 引用都要验证文件或当前支持的 URL；新增内容不自行上传到未知第三方。
-- 打开本次新增或修改的所有题图，核对数值、结构、方向、拓扑与题干和答案。
+- 打开本次新增或修改的所有题图，核对数值、结构、方向、拓扑与题干和答案。Agent 无法查看图片时，改为确认文件名与源文件对应、文件大小合理、来源可靠，并在 PR 不完整项中注明题图未经 Agent 核验。
 - `Figure float` 必须位于所属题目的 heading 之后，不能落入上一节。
-- 不执行 SVG、ZIP、Office 附件中的脚本或宏，不因图像“优化”改变题目条件。
+- 不执行 SVG、ZIP、Office 附件中的脚本或宏，不因图像”优化”改变题目条件。
 
 ### 答案和回忆题
 
@@ -175,6 +176,8 @@ pnpm build
 
 命令变化时以当前 CI 为准。失败要区分本次内容错误、仓库基线和环境问题，不删内容或绕过校验伪造成功。
 
+`pnpm build` 因环境限制（内存不足 OOM、磁盘空间等）失败时，若 `pnpm check` 和 `pnpm lint` 均已通过，在验证结果中如实报告环境限制，不阻塞贡献流程。
+
 GitHub 写入前向用户说明：
 
 - 目标试卷和仓库相对路径；
@@ -186,29 +189,158 @@ GitHub 写入前向用户说明：
 
 用户当前请求已明确包含 commit/push/PR 且不存在需要决定的事实歧义时不必重复确认。否则在外部写入前暂停。构建通过不代表内容事实、版权或收录政策已经获批。
 
-## GitHub 贡献
+## GitHub、PR、CI 和 Review
 
 目标仓库是 `byrdocs/byrdocs-neowiki`，base 使用当前实际默认分支。
 
-1. 只读确认 `gh` 身份、fork、目标仓库和 open PR；不得读取或展示 access token。
-2. 没有 fork 时，在获得授权后创建。不要强制同步、重置或 force push 用户 fork 的默认分支。
-3. 验证 origin 指向当前用户 fork、upstream 指向目标仓库，并 fetch 最新 base。
-4. 恢复 PR 时使用它的真实 head；新贡献只有在没有匹配 PR、远端同名分支或历史冲突后才创建分支。
-5. 分支名确定一次并通过 `git check-ref-format --branch`；不直接拼接未经规范化的用户标题。
-6. 提交前再次检查 status、diff 和 staged files，只暂存本次目录：
+### 身份、fork 和 base
+
+先确认 GitHub CLI 可用，再执行只读检查：
 
 ```bash
-git add -- exams/<exam-dir>
+gh --version
+gh auth status
+gh api user --jq .login
+gh repo view byrdocs/byrdocs-neowiki --json defaultBranchRef,nameWithOwner
 ```
 
-7. push 前检查远端没有并发更新；非 fast-forward 时安全整合，不 force push 覆盖变化。
-8. PR body 写明试卷、来源、内容摘要、不完整项、验证结果和查重情况，不包含本机绝对路径、凭证或长日志。
-9. 新 PR 默认 draft；已有 PR 更新同一 head 和同一 PR。创建或更新后核对 URL、state、draft、base、head、changed files 和 checks。
-10. 只有用户明确要求时才标记 ready for review。
+不得读取或展示 access token。没有 fork 时，询问用户是否允许创建：
+
+```bash
+gh repo fork byrdocs/byrdocs-neowiki --clone=false
+```
+
+不要强制同步、重置或 force push 用户 fork 的默认分支。
+
+验证 remote 配置：`origin` 必须指向当前用户 fork，`upstream` 指向目标仓库。如果 checkout 的 `origin` 指向主仓库，先 rename 再添加 fork：
+
+```bash
+git remote rename origin upstream
+git remote add origin https://github.com/<user>/byrdocs-neowiki.git
+```
+
+如果 `upstream` 已存在，验证其 URL 指向 `byrdocs/byrdocs-neowiki`（HTTPS 和 SSH 均为合法形式）。确认后 fetch 最新 base：
+
+```bash
+git fetch upstream master
+```
+
+### 先查询已有 PR
+
+必须在创建本地分支、commit 或 push 前查询已有 open PR。先列出当前用户在目标仓库的 open PR：
+
+```bash
+gh pr list --repo byrdocs/byrdocs-neowiki \
+  --author “@me” --state open --limit 100 \
+  --json number,url,isDraft,headRepositoryOwner,headRefName,baseRefName
+```
+
+对候选逐一用 `gh pr view` 读取 `files`。恢复已有 PR 时使用它的真实 head；只有 owner、head、base 和目标 `exams/<exam-dir>/...` 均匹配时才复用。多个候选时让用户消歧，不自行选择一个写入。其他用户的 PR 只作为重复候选，不能写入其 head。
+
+新任务或已有可信 branch 时，再精确查询：
+
+```bash
+gh pr list --repo byrdocs/byrdocs-neowiki \
+  --head <branch> --state open \
+  --json number,url,isDraft,headRepositoryOwner,headRefName,baseRefName
+```
+
+### 准备分支
+
+没有匹配 PR 时，检查远端同名分支是否已被旧 PR 占用：
+
+```bash
+git show-ref --verify --quiet refs/remotes/origin/<branch>
+gh pr list --repo byrdocs/byrdocs-neowiki \
+  --head <branch> --state all \
+  --json number,url,state,headRepositoryOwner,headRefName
+```
+
+远端同名分支存在但无对应 PR，或对应 PR 已关闭时，暂停让用户决定恢复还是换名。
+
+分支名确定一次并通过校验，不直接拼接未经规范化的用户标题：
+
+```bash
+git check-ref-format --branch “<branch>”
+```
+
+确认后从最新 upstream/master 创建：
+
+```bash
+git checkout -b <branch> upstream/master
+```
+
+### 暂存、提交和推送
+
+提交前检查 status、diff 和 staged files，只暂存本次试卷目录：
+
+```bash
+git status --porcelain
+git add -- exams/<exam-dir>
+git status --porcelain  # 必须只显示本次目录
+```
+
+出现无关变更时停止，不清理或提交用户的其他改动。
+
+push 前再次 fetch 对应远端 head，确认没有并发更新。非 fast-forward 时安全整合，不 force push：
+
+```bash
+git fetch origin <branch>
+git push -u origin <branch>
+```
+
+### 创建或更新 draft PR
+
+PR body 写入独立文件，使用 `--body-file` 避免 shell 转义问题。body 必须包含：
+
+- 试卷：学年、学期、科目、阶段
+- 来源：源仓库/文件及题图出处
+- 内容摘要：题型、数量、答案覆盖情况
+- 不完整项：学院未知、答案未核验、题图未经 Agent 核验等
+- 验证结果：lint/check/build 实际输出
+- 查重情况：已有页面和 open PR 的检查结果
+- 尾注：`*由 [BYR Docs Wiki Skill](https://github.com/byrdocs/byrdocs-cli-envolved) 创建*`
+
+不包含本机绝对路径、凭证、token 或长日志。
+
+已有 PR 时更新同一 PR：
+
+```bash
+gh pr edit <number> --repo byrdocs/byrdocs-neowiki \
+  --body-file <pr-body-file>
+```
+
+没有匹配 PR 时创建新的 draft：
+
+```bash
+gh pr create \
+  --repo byrdocs/byrdocs-neowiki \
+  --base master \
+  --head <user>:<branch> \
+  --draft \
+  --title “<简洁标题>” \
+  --body-file <pr-body-file>
+```
+
+`--head` 的 owner 必须是当前个人账号，不填组织名。创建或更新后核对：
+
+```bash
+gh pr view <number> --repo byrdocs/byrdocs-neowiki \
+  --json url,isDraft,state,headRefName,baseRefName,statusCheckRollup,reviews,files
+```
+
+默认保持 draft。只有用户明确要求时才标记 ready for review。
 
 ## CI、review 和完成
 
 读取真实 checks、diff、reviews、comments 和 changed files：
+
+```bash
+gh pr view <number> --repo byrdocs/byrdocs-neowiki \
+  --json statusCheckRollup,reviews,reviewDecision,comments,files
+gh pr checks <number> --repo byrdocs/byrdocs-neowiki
+gh pr diff <number> --repo byrdocs/byrdocs-neowiki
+```
 
 - lint/check/build 失败时读取对应日志并优先本地复现；
 - frontmatter、目录、组件和资源问题按当前实现修复；
