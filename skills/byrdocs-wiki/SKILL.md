@@ -30,9 +30,10 @@ description: Use when 用户想在 BYRDocs 维基真题录入或修改试题、�
   `references/contribution.md`。
 - 准备录入或修改正文时，还必须读取 `references/editing-guide.mdx`。需要环境准备、
   本地预览或普通人工贡献说明时读取 `references/project-readme.md`。
-- checkout 存在时，必须读取它当前的 `CLAUDE.md`/`AGENTS.md`、`src/guide/index.mdx`、
-  frontmatter schema、模板、相关组件和 CI；不能只依赖打包快照。
-- 对于文档里未提及的部分，可以参考 upstream 仓库的其他试题是怎么写的。
+- checkout 准备好后，按 `references/contribution.md` 的“实时仓库索引”区分当前文档、
+  任务对象和兜底参考；不要泛读整个仓库。
+- 只有文档未提及或没有写清楚时，才参考与问题直接相关的 upstream 实现或少量近期
+  同类试题；这些内容不能反过来创造或覆盖编辑规范。
 - 不编造题目、选项、分值、答案、学院、考试时间或来源。回忆题允许不完整和非原文
   表达，但必须如实保留不确定性。
 - 不把整页试卷照片当正文。除必要题图和音频外，内容应录成符合项目规范的 MDX。
@@ -41,18 +42,17 @@ description: Use when 用户想在 BYRDocs 维基真题录入或修改试题、�
   或不必要的个人信息。
 - 默认创建 draft PR。只有用户明确要求，才能标记 ready for review。
 
-## 事实来源优先级
+## 规则来源优先级
 
 发生冲突时按以下顺序处理：
 
-1. 当前 Neowiki checkout 的实现、schema 和 CI；
-2. 当前 checkout 的编辑指南、模板、仓库说明和同类最新页面；
-3. 本 Skill 打包的 guide/README 快照；
-4. BYRDocs Blog 教程；
-5. Agent 一般经验。
+1. 当前 Neowiki 官方编辑指南和仓库说明；没有 checkout 时使用本 Skill 打包的快照；
+2. BYRDocs Blog 教程；
+3. 仅在文档未覆盖时，当前 checkout 的 schema、相关实现和少量同类页面；
+4. Agent 一般经验。
 
-博客和快照可以解释操作，但不能覆盖当前代码或 CI。发现规则漂移时，按当前 checkout
-执行，并在最终回复中指出快照需要刷新。
+schema 和 CI 是机器校验边界，不自动构成新的编辑规范。文档与实现或 CI 冲突时，不
+静默用实现改写规则；保留验证结果，指出规则漂移，并让维护者或用户决定。
 
 ## 任务路由
 
@@ -81,7 +81,7 @@ description: Use when 用户想在 BYRDocs 维基真题录入或修改试题、�
 
 1. 确认任务类型、目标试卷和来源材料。
 2. 发现或准备专用 Neowiki checkout，保留用户无关改动。
-3. 读取当前仓库规则并同步最新 upstream base。
+3. 按实时仓库索引读取本次所需规则，并同步最新 upstream base。
 4. 查重现有页面、同名目录和当前用户 open PR。
 5. 检查来源，列出可验证事实、缺失内容和不确定项。
 6. 创建或修改 `exams/<试卷名>/index.mdx` 及同目录资源。

@@ -2,16 +2,6 @@
 
 本文件是 Agent 执行 Neowiki 新录入、修改、补答案、纠错、贡献恢复、draft PR、CI 和 review 的权威流程。开始编辑或执行 git/gh 写操作前必须完整读取。
 
-## 目录
-
-1. [边界和权威来源](#边界和权威来源)
-2. [按证据恢复](#按证据恢复)
-3. [统一贡献流程](#统一贡献流程)
-4. [内容门禁](#内容门禁)
-5. [验证和用户确认](#验证和用户确认)
-6. [GitHub 贡献](#github-贡献)
-7. [CI、review 和完成](#cireview-和完成)
-
 ## 边界和权威来源
 
 本流程只处理 `byrdocs/byrdocs-neowiki` 的试卷内容：
@@ -22,17 +12,35 @@
 
 只搜索/下载主站资料、上传 PDF/ZIP 或贡献 `byrdocs-archive` metadata 时转到 `byrdocs` Skill。修改 Astro 组件、站点功能或部署逻辑时按普通软件开发任务处理，不套用内容贡献流程。
 
-拥有目标 checkout 后，按以下优先级判断规则：
+按以下优先级判断贡献规则：
 
-1. 当前 checkout 的实现、schema 和 CI；
-2. 当前 `src/guide/index.mdx`、模板、仓库说明和近期同类页面；
-3. Skill 内打包的 guide/README 快照；
-4. BYRDocs Blog 教程；
-5. Agent 一般经验。
+1. 当前官方编辑指南和仓库说明；没有 checkout 时使用 Skill 内打包的 guide/README 快照；
+2. BYRDocs Blog 教程；
+3. 仅在文档未覆盖时，当前 checkout 的 schema、相关实现和少量近期同类页面；
+4. Agent 一般经验。
 
-至少读取当前实际存在的仓库指令文件、`src/guide/index.mdx`、frontmatter schema、`templates/exam-page.mdx`、本次使用的组件和 PR workflow。处理 review 时再读取当前 `.github/prompts/review.md`。旧 instruction 指向不存在的路径时，以当前 import 和实际文件为准。
+README 和博客用于解释环境准备、VS Code 插件、预览和人工操作；内容编辑规则仍以官方编辑指南为准。其中的 `git add .`、宽泛 `git pull`、拼写错误或旧目录示例不直接转化为 Agent 规范。
 
-博客和 README 用于解释环境准备、VS Code 插件、预览和人工操作，不覆盖当前代码，也不把其中的 `git add .`、宽泛 `git pull`、拼写错误或旧目录示例当作 Agent 规范。
+## 实时仓库索引
+
+Skill 内的 guide/README 足以理解规则和准备草稿。获得目标 checkout 后，不要泛读整个项目；按下表区分当前文档、完成任务必须操作的对象，以及仅在文档未覆盖时使用的兜底参考：
+
+| 类别 | 触发条件 | 读取路径 | 用途 |
+| --- | --- | --- | --- |
+| 当前文档 | 核对打包快照是否过期 | `src/guide/index.mdx`、`README.md` | 当前官方说明；内容未变化时不必重复分析 |
+| 当前文档 | 处理 PR review | `.github/prompts/review.md` | 当前 review 范围、分类和输出要求 |
+| 任务对象 | 所有实际贡献 | 仓库根目录当前存在的 `CLAUDE.md`、`AGENTS.md` 等指令文件 | 遵守仓库级指令及其作用域 |
+| 任务对象 | 新建页面 | `templates/exam-page.mdx` | 使用当前页面骨架，不从 Skill 自造模板 |
+| 任务对象 | 修改已有页面 | 目标 `exams/<exam-dir>/index.mdx`、同目录资源和相关 Git 历史 | 读取真正要修改的内容和依据 |
+| 任务对象 | 安装或本地验证 | `package.json`、当前 lockfile、`.github/workflows/pr-checks.yml` | 执行当前环境和验证命令，不从中推导编辑规范 |
+| 任务对象 | 排查 review 自动化 | `.github/workflows/claude-review.yml`、`.github/workflows/claude.yml` | 仅在对应 Action 或触发流程异常时读取 |
+| 兜底参考 | 文档未给出精确字段、枚举、格式或目录校验 | `src/utils/examFrontmatter.ts`、`src/utils/examDirectories.ts`；必要时从 `src/content.config.ts` 跟随 import | 补足机器校验细节 |
+| 兜底参考 | 文档未说明本次组件的属性或行为 | `src/components/exam.ts` 和对应的 `src/components/exam/<组件>.astro` | 补足当前导出和 props |
+| 兜底参考 | 查重，或文档未覆盖具体写法 | 少量近期同类 `exams/*/index.mdx` 和 open PR | 判断重复；只参考当前项目惯例，不据此新增规则 |
+
+“任务对象”只用于完成和验证本次贡献，不是额外规范来源；“兜底参考”仅回答文档遗漏，不能覆盖文档。若文档允许的内容被 schema 或 CI 拒绝，保留失败证据并报告规则漂移，不静默改变内容来迁就实现。
+
+某一路径已移动或文件不存在时，用当前 import、组件导出、`package.json` scripts 和 workflow 引用定位替代文件；记录实际路径，不退回猜测，也不扩大为全仓库扫描。review prompt 若引用已不存在的旧路径，也按规则漂移处理。
 
 ## 按证据恢复
 
@@ -56,7 +64,7 @@
 
 优先使用用户明确指定的 Neowiki checkout；否则使用新的专用绝对路径。已有 checkout 脏时，只在本次路径与原改动不重叠时继续；无法隔离就换专用 checkout。不要在无关仓库创建相对 `exams/`、branch 或 PR body，不清理、覆盖或提交无关改动。
 
-验证 checkout 确实是 `byrdocs/byrdocs-neowiki` 或当前用户的 fork，识别 origin、upstream 和当前默认分支。Node/pnpm 版本以当前 `package.json`、lockfile 和 CI 为准。
+验证 checkout 确实是 `byrdocs/byrdocs-neowiki` 或当前用户的 fork，识别 origin、upstream 和当前默认分支，然后按“实时仓库索引”加载本次任务所需约束。
 
 ### 2. 查重页面和 PR
 
