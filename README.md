@@ -1,7 +1,7 @@
 # BYRDocs CLI
 
-面向 Agent 的 BYRDocs 贡献命令行工具，用于把登录、上传、下载、
-metadata 和搜索这些步骤做成稳定的脚本接口。
+面向 Agent 的 BYRDocs 搜索、下载和贡献命令行工具，用于把登录、搜索、
+下载、上传和 metadata 等步骤做成稳定的脚本接口。
 
 ## 安装
 
