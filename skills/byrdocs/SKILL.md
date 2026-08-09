@@ -6,7 +6,7 @@ description: Use when 用户想搜索或下载 BYRDocs 主站教材/资料/试�
 # BYRDocs 资料库搜索、下载和贡献
 
 用这个 Skill 搜索或下载 BYRDocs 主站资料，或向 `byrdocs/byrdocs-archive` 完成一次
-原始文件和 metadata 贡献。搜索使用打包的公开搜索契约；CLI 负责登录、下载、上传、
+原始文件和 metadata 贡献。搜索使用运行时读取的公开搜索契约；CLI 负责登录、下载、上传、
 metadata 模板、校验和预览；Agent 负责结构化筛选、理解资料、询问用户、编辑 YAML
 和使用 GitHub 创建 PR。
 
@@ -32,7 +32,8 @@ metadata 模板、校验和预览；Agent 负责结构化筛选、理解资料�
 - 不要索要、接触或保存校园网密码。只展示 `auth login --json` 返回的登录链接，让用户自行在浏览器完成认证。
 - 不要读取或泄露 token、cookie、登录轮询凭证、本机隐私路径、JWT claims、学号或 GitHub access token。
 - metadata 事实只能来自资料内容、当前 BYRDocs 文档/schema、可靠查询、搜索结果或用户确认。未知必填信息询问用户；允许省略的未知可选字段省略，不要猜。
-- 不假设用户机器上存在任何 BYRDocs 源码目录。贡献所需的收录和元信息规则随本 Skill 分发；只有真正准备 GitHub PR 时，才按 contribution reference 在专用 workspace 中创建临时 archive checkout。
+- 不假设用户机器上存在任何 BYRDocs 源码目录。先读取 `references/upstream.md`，按文档 ID 在线解析贡献所需规则；只有真正准备 GitHub PR 时，才按 contribution reference 在专用 workspace 中创建临时 archive checkout。
+- 无法读取 `references/upstream.md` 或解析本步骤所需的权威来源时，在当前回复中说明不可用的文档 ID 并暂停依赖步骤；不得转向 Agent memory、旧快照、未在索引声明的实现或同类资料来补全当前规则。
 - 用户可控的路径、标题、课程名和 PR body 路径必须作为独立 shell 参数或正确引用的参数传入。branch 不得直接拼入未经规范化的标题或其他用户输入；贡献流程按 reference 确定并校验一次 `<branch>`，后续命令始终复用该值。
 - 不直接调用主站内部 API；搜索使用公开 MCP/HTTP API，其他动作使用 BYRDocs CLI 和 `gh`。
 
@@ -40,7 +41,9 @@ metadata 模板、校验和预览；Agent 负责结构化筛选、理解资料�
 
 ### 搜索资料
 
-**必须读取：** 在构造搜索请求前，读取 `references/search.md`。优先使用该文件定义的 MCP 或 HTTP API。只有当前环境不能直接调用 MCP/HTTP 时，才使用 CLI fallback。
+**必须读取：** 在构造搜索请求前，读取 `references/upstream.md` 并解析
+`search-contract`。优先使用该实时契约定义的 MCP 或 HTTP API。只有当前环境不能直接
+调用 MCP/HTTP 时，才使用 CLI fallback。
 
 搜索任务不需要 CLI 时，必须跳过 CLI 的安装、`help`、`doctor` 和登录。
 
@@ -52,7 +55,8 @@ metadata 模板、校验和预览；Agent 负责结构化筛选、理解资料�
 
 **必须完整读取：** 在上传文件、编辑 metadata、执行任何 git/gh 写操作、恢复中断贡献或处理 CI/review 前，完整读取 `references/contribution.md`。
 
-本节只负责路由，不能根据本节摘要自行推断贡献流程。执行到查重步骤时，还必须按搜索入口读取 `references/search.md`。
+本节只负责路由，不能根据本节摘要自行推断贡献流程。执行到查重步骤时，还必须按搜索
+入口解析 `search-contract`。
 
 ## 按需准备 CLI
 
@@ -124,8 +128,8 @@ byrdocs auth wait <session-id> --json
 
 ## 搜索流程
 
-1. 读取 `references/search.md`，按其中当前 MCP/HTTP schema 构造请求。线上 `llms.txt` 只用于怀疑打包契约过期时刷新核对。
-2. 优先使用 `https://search.byrdocs.org/mcp` 的 `search_files`；没有 MCP 时使用 `POST https://search.byrdocs.org/api/search`。
+1. 读取 `references/upstream.md` 并解析 `search-contract`，按实时 MCP/HTTP schema 构造请求。契约不可用时不要凭旧记忆猜请求结构。
+2. 按实时契约选择 MCP 或 HTTP 入口；不要在 Skill 中另存端点、参数或响应 schema 副本。
 3. 把用户要求翻译成结构化条件。例如遇到“最新”“期末”“只要原题”等要求，必须先按类型、阶段等字段筛选，再按时间排序，再截断到用户要求的数量；不能先取相关度前几条再筛选，能结构化条件筛选的就不要自己去看。
 4. 需要后续下载时，保留原始 `id`、直接 `/files/<md5>.<pdf|zip>` URL、`data.filetype` 和是否为 wiki；不要请求短链。
 5. `wiki-N`/`filetype: wiki` 是查看项，不是 `byrdocs download` 可接受的 file-ref。
@@ -172,7 +176,9 @@ byrdocs download <direct-url-or-key> --output <path> --json
 
 贡献流程的所有操作、产物恢复、metadata 边界、GitHub 写入门禁、draft PR、CI 和 review 规则只在 `references/contribution.md` 中维护。必须先完整读取该文件，再按其中的持久化产物恢复阶梯判断下一步。
 
-主文件中的 CLI、登录和搜索契约继续有效；发生冲突时，搜索请求结构以 `references/search.md` 为准，贡献顺序和安全门禁以 `references/contribution.md` 为准，CLI 实际参数以当前 `help <command> --json` 为准。
+主文件中的 CLI 和登录契约继续有效；发生冲突时，搜索请求结构以 `search-contract` 的
+实时内容为准，贡献顺序和安全门禁以 `references/contribution.md` 为准，CLI 实际参数
+以当前 `help <command> --json` 为准。
 
 ## 最终回复和通用恢复
 

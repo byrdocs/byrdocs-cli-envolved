@@ -20,7 +20,7 @@
 - 未知必填信息必须询问用户；上游允许省略的未知可选字段应省略。不能以非空模板、校验通过或 `ready_for_pr` 替代事实确认。
 - 普通新增贡献只新增或修改本次 `metadata/<md5>.yml`。不要删除或修改旧文件，除非用户明确提出。
 - 不要把完整 schema 复制进 Skill。类型、字段和枚举以当前实时 schema、上游文档、同类 metadata 示例和 CI 为准。
-- 运行本流程时不得假设用户机器上存在 `byrdocs`、`byrdocs-publish` 或 `byrdocs-archive` 源码目录。需要的收录规则已随 Skill 放在 `references/文件规则.md` 和 `references/元信息规则.md`；只有进入 GitHub 写入阶段时，才在专用 workspace 中新建 archive checkout。
+- 运行本流程时不得假设用户机器上存在 `byrdocs`、`byrdocs-publish` 或 `byrdocs-archive` 源码目录。先完整读取 `references/upstream.md`，按文档 ID 在线解析收录和元信息规则；只有进入 GitHub 写入阶段时，才在专用 workspace 中新建 archive checkout。
 - 用户可控路径、标题和 PR body 路径必须作为独立 shell 参数或正确引用的参数传入。branch 不得直接使用未经规范化的标题或其他用户输入；专用 workspace 内的固定临时文件名可以直接使用。
 - 普通用户贡献默认创建 draft PR。只有用户明确确认后，才能标记 ready for review。
 
@@ -67,20 +67,18 @@ CLI 调用方式、登录能力、用户确认和 PR 授权属于执行门禁，
 
 ## 文件检查和类型判断
 
-先完整读取 Skill 内的 `references/文件规则.md`，再确认源文件存在、可读、扩展名与实际类型一致，并收集可验证事实。该 reference 是随 Skill 分发的上游规则快照；实时 schema 和 archive CI 与它冲突时，以实时结果为准。
+先读取 `references/upstream.md` 并解析 `file-rules`，再确认源文件存在、可读、扩展名与
+实际类型一致，并收集可验证事实。文件分类、收录范围、质量和语义重复判断以该实时
+文档为准；本流程不复制其类别定义。
 
 - PDF：查看首页、封面、目录、试题题头和必要页面；不要因为文件名像“教材”或“期末”就直接定类。
 - ZIP：只列出文件名，读取 README 和必要的少量纯文本；不要执行压缩包内脚本，不要打开可执行文件，也不要在不安全位置整体解压。
-- `book`：正式出版的教育类书籍，只能是 PDF。课件、讲义、笔记和未正式出版资料不要归为 `book`。
-- `test`：北京邮电大学实际考过的期中/期末真题、答案或二者皆有，只能是 PDF。模拟卷、题库、月考、作业和外校试题不要归为 `test`。年份完全无法确认时，先问用户或按上游规则判断是否应改类。
-- `doc`：不属于 `book` 或 `test` 的课程学习/复习资料，可为 PDF 或 ZIP，但必须至少对应一门课程。
-- 课程名尽量使用全称。`doc.content` 使用当前 schema 允许的值；`book` ISBN 使用 ISBN13。具体字段仍以实时 schema 为准。
 
 先形成“已证实事实、合理候选、未知必填、未知可选”四类清单。只有已证实事实可直接写入；合理候选需要继续查证或让用户确认。
 
 ## 语义查重
 
-执行查重步骤时，必须再按主 Skill 的搜索入口完整读取 `references/search.md`。使用 MCP/HTTP 主路径，按资料类型组合标题、课程、老师、ISBN、年份、学期等查询；不能只搜索 MD5。
+执行查重步骤时，必须再按主 Skill 的搜索入口解析 `search-contract`。使用 MCP/HTTP 主路径，按资料类型组合标题、课程、老师、ISBN、年份、学期等查询；不能只搜索 MD5。
 
 - 疑似同一资料时，向用户展示关键相似字段和现有条目链接。
 - 不同 MD5 但标题、课程、年份高度相似时，暂停上传或 PR，询问它是不同版本、更高质量版本、补充资料，还是重复上传。
@@ -100,7 +98,9 @@ byrdocs upload <absolute-file.pdf|absolute-file.zip> --json
 
 `data.status: "uploaded"` 和 `"exists"` 都进入同一个 metadata 流程。`exists` 表示服务端已有相同 MD5 的二进制，CLI 已把它作为幂等成功返回；不要把它当错误，也不要查询主站内部的 Uploaded/Published 状态。
 
-打包的上游 `references/文件规则.md` 把 Publish 遇到重复二进制时的上传响应描述为“上传失败”；当前 Publish UI 随后会提供“使用该文件”，再继续录入元信息。CLI 把这整个可继续结果规范为 `ok: true`、`status: "exists"`。不要把上游规则中 Publish 的 UI/接口错误语义套到 CLI 流程。
+`file-rules` 只决定收录和去重政策，不定义 CLI 响应。当前 CLI 的 `ok: true`、
+`status: "exists"` 是可继续的幂等结果；不要把 Publish UI 的提示或接口语义套到 CLI
+流程。
 
 metadata 合并到 archive `master` 后，上游 `upload-metadata` workflow 负责发布 metadata 并衔接主站内部文件状态；这不是贡献 Agent 的步骤。Agent 只跟踪 metadata、PR 和公开 CI/review 结果。
 
@@ -131,13 +131,16 @@ gh api --method GET repos/byrdocs/byrdocs-archive/contents/metadata/<md5>.yml \
 
 ### 加载实时规则
 
-先完整读取 Skill 内的 `references/元信息规则.md`，再为候选类型实时读取 schema。该上游快照以 Publish 解释 YAML/URL，用于字段语义。
+读取 `references/upstream.md`，解析 `metadata-rules` 解释字段语义，再通过 CLI 解析
+`metadata-schema` 的当前机器契约：
 
 ```bash
 byrdocs meta schema --type <book|test|doc> --json
 ```
 
-检查 JSON 的 schema 来源和 URL。打包的规则解释字段语义，实时 schema 决定当前结构、必填项和枚举；两者冲突时以实时 schema 为准。服务不可用时不得仅凭打包快照或旧记忆继续。
+检查 JSON 的 schema 来源和 URL。实时 schema 决定当前结构、必填项和枚举；文档与
+schema 冲突时保留校验结果并报告上游漂移，不为通过校验编造事实。权威来源不可用时
+不得凭旧记忆继续。
 
 字段语义仍不清楚时，可以通过 GitHub 远端 API 读取同类型或同课程的 `metadata/*.yml` 示例；不得假设本机已有 archive checkout。
 
