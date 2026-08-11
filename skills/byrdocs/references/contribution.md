@@ -12,17 +12,30 @@
 - 搜索和 CLI 的共享契约仍以主 `SKILL.md` 为准。本文件不另建一套登录或 JSON 解析契约。
 - 不要直接调用主站内部 API。搜索只使用公开搜索 MCP/HTTP API；贡献只通过 BYRDocs CLI 和 `gh`。除非用户正在维护 CLI 本身，不要绕过这些入口。
 
-## 贡献不可变原则
+## 执行顺序和阶段门禁
 
-- 本 Skill 的 Agent/CLI 流程不依赖 BYR Docs Publish；不要混用 `byrdocs-publish` 的 token、内部 API 或中间状态。官方网页贡献是另一条可用流程，但其状态不能作为本流程的 CLI、workspace 或 PR 证据。
-- 不得读取、展示或复制任何 token 文件、cookie、登录轮询凭证、JWT claims、校园网密码或 GitHub access token。不要把学号、本机隐私路径或其他个人标识写进 metadata、commit、PR body、评论或最终回复。
-- metadata 事实必须来自资料内容、当前 BYRDocs schema/文档、可靠查询结果、搜索结果或用户确认。不要为了通过校验编造课程、老师、年份、学期、学院、来源、ISBN、版次、出版社、授权状态等信息。
-- 未知必填信息必须询问用户；上游允许省略的未知可选字段应省略。不能以非空模板、校验通过或 `ready_for_pr` 替代事实确认。
-- 普通新增贡献只新增或修改本次 `metadata/<md5>.yml`。不要删除或修改旧文件，除非用户明确提出。
-- 不要把完整 schema 复制进 Skill。类型、字段和枚举以当前实时 schema、上游文档、同类 metadata 示例和 CI 为准。
-- 运行本流程时不得假设用户机器上存在 `byrdocs`、`byrdocs-publish` 或 `byrdocs-archive` 源码目录。先完整读取 `references/upstream.md`，按文档 ID 在线解析收录和元信息规则；只有进入 GitHub 写入阶段时，才在专用 workspace 中新建 archive checkout。
-- 用户可控路径、标题和 PR body 路径必须作为独立 shell 参数或正确引用的参数传入。branch 不得直接使用未经规范化的标题或其他用户输入；专用 workspace 内的固定临时文件名可以直接使用。
-- 普通用户贡献默认创建 draft PR。只有用户明确确认后，才能标记 ready for review。
+主 `SKILL.md` 的授权、事实、工具和范围门禁在所有阶段持续生效。按下列顺序推进；某阶段
+证据不完整时保留已有产物并暂停，不提前运行后续阶段来“看看能不能做”。
+
+| 阶段 | 进入下一阶段前必须成立 |
+| --- | --- |
+| 准备 | 目标资料、来源文件和专用 workspace 已确定；恢复时已找到最靠后的可信产物 |
+| 检查 | 已按实时 `file-rules` 检查文件内容、类型、质量和可收录性 |
+| 查重 | 已完成语义查重；重复、版本或质量差异已得到处理决定 |
+| 主站 | 当前任务所需 CLI 和服务可用；上传身份满足；得到一致的 canonical file-ref |
+| Metadata | 字段均有来源，未知项按规则询问或省略；validate/preview 结果已处理 |
+| 发布 | GitHub 身份、fork、branch、已有 PR 和精确 diff 已核对；写操作在授权范围内 |
+| 收尾 | PR、CI、review 或明确阻塞状态与真实远端一致 |
+
+## 本流程的领域边界
+
+- 本流程不依赖 BYR Docs Publish；网页贡献状态不能作为本流程的 CLI、workspace 或 PR 证据。
+- metadata 事实必须来自资料、当前文档/schema、可靠查询、搜索结果或用户确认。校验通过、
+  非空模板和 `ready_for_pr` 都不能替代事实依据。
+- 普通新增贡献只修改本次 `metadata/<md5>.yml`；除非用户明确提出，不修改其他 metadata。
+- 字段和枚举以实时文档/schema 为准，不在 Skill 中复制；同类 metadata 只用于文档未覆盖
+  时理解现有表达，不能把常见写法提升为规则。
+- archive checkout 只在 GitHub 阶段准备；普通贡献默认创建 draft PR。
 
 ## 工作区和路径安全
 
@@ -57,14 +70,6 @@
 
 CLI 调用方式、登录能力、用户确认和 PR 授权属于执行门禁，不是可持久化恢复状态；到需要它们的步骤时重新只读验证。不要为“保险”覆盖 metadata 或重复创建 PR。
 
-## 服务、CLI 和认证能力门禁
-
-按主 `SKILL.md` 的“按需准备 CLI”“CLI JSON 契约”和“登录”执行，并在本次任务中始终使用同一 argv 前缀。
-
-贡献需要以下命令：`auth login`、`auth wait`、`auth status`、`upload`、`meta schema`、`meta init`、`meta validate`、`meta preview`。使用当前 CLI 的 `help --json`/`help <command> --json` 和 `doctor --json` 确认，不要探测文档中未实现的 `capabilities` 命令。命令缺失、JSON schema 不兼容或所需服务不可达时停止并提示升级或修复 CLI。
-
-贡献认证只增加一个能力证据：上传前 `auth status --json` 必须同时显示 `logged_in: true` 和 `can_upload: true`。不满足、等待超时或实际上传返回 401 时，完整回到主 Skill 的“登录”流程；本文件不重复 login/wait/poll 细节。
-
 ## 文件检查和类型判断
 
 先读取 `references/upstream.md` 并解析 `file-rules`，再确认源文件存在、可读、扩展名与
@@ -85,6 +90,25 @@ CLI 调用方式、登录能力、用户确认和 PR 授权属于执行门禁，
 - 用户确认重复且没有新增价值时，停止贡献，不上传、不创建 metadata PR。
 - 用户确认是不同版本或有保留价值时，记录判断依据，供 metadata 和 PR body 使用。
 - 查重结果是 wiki 项时，只将其作为语义线索；wiki 不是可上传/下载 file-ref。
+
+## 服务、CLI 和认证能力门禁
+
+只有文件检查和语义查重已经表明应继续贡献时，才准备主站 CLI、检查服务和认证。按主
+`SKILL.md` 的“按需准备 CLI”“CLI JSON 契约”和“登录”执行，并在本次任务中始终使用
+同一 argv 前缀。
+
+根据下一步只验证实际需要的命令；上传和 metadata 流程可能依次需要 `auth status`、
+`auth login`、`auth wait`、`upload`、`meta schema`、`meta init`、`meta validate` 和
+`meta preview`。用当前 CLI 的 `help <command> --json` 和必要的 `doctor --json` 确认，
+不为尚未进入的阶段批量探测能力，也不探测未实现的 `capabilities` 命令。
+
+缺少 CLI、`gh` 或必要的文件检查工具时，不通过 npm、pip、系统包管理器或项目依赖安装
+来暗中补齐；先使用已有等价能力，仍无法满足阶段门禁时说明缺口并询问用户。命令缺失、
+JSON schema 不兼容或所需服务不可达时停止并提示修复。
+
+上传前 `auth status --json` 必须同时显示 `logged_in: true` 和 `can_upload: true`。不满足、
+等待超时或实际上传返回 401 时，完整回到主 Skill 的“登录”流程；本文件不重复
+login/wait/poll 细节。
 
 ## 上传、复用与精确 MD5 查重
 
@@ -164,7 +188,10 @@ byrdocs meta init <md5.ext-or-direct-url> \
 
 只填写有来源的字段。对每一项记录来源属于文件内容、实时文档/schema、搜索/可靠查询或用户确认中的哪一种。
 
-向用户展示 YAML 时，必须解释所有填写了的字段和来源，展示所有未填写的字段和原因，并向用户确认已经正确填写了所有能填写的字段。未知必填项形成清晰问题；允许省略的未知可选项保留为空缺，不要猜。
+对最终 YAML 保留字段来源说明，并向用户呈现会影响事实正确性或收录判断的未知项、冲突
+和 warning。未知必填项形成清晰问题；允许省略的未知可选项保留为空缺，不要猜。用户已
+明确要求端到端完成贡献、所有事实均有依据且风险与范围没有变化时，不必为已展示过的
+常规字段重复索要授权；仍需用户决定的事实必须先询问并暂停。
 
 最终进入仓库的文件必须是 `metadata/<md5>.yml`；文件名 MD5、`id`、URL 中 MD5、扩展名和 `data.filetype` 必须一致。PR body 应区分文件推断、外部查询和用户确认的事实。
 
@@ -178,11 +205,17 @@ byrdocs meta preview <absolute-workspace>/generated/metadata/<md5>.yml --json
 - 有 error diagnostics 时，按 `path` 和 `message` 修正事实或格式；不要绕过校验。
 - 只有 warning 时也要向用户解释风险。
 - `ready_for_pr: true` 只说明机器校验允许进入 PR，不代表用户已经确认事实，也不代表版权、收录政策或内容质量获批。
-- 除非用户事先明确要求 Agent 全权完成贡献，否则必须把最终 YAML、字段来源、未填项、validate/preview 摘要和 warning 给用户确认，并获得创建或更新 PR 的授权。
+- GitHub 写入不在用户当前请求内时，必须把最终 YAML、字段来源、未填项、validate/preview
+  摘要和 warning 给用户，并获得创建或更新 PR 的授权。写入已明确授权时，仅在事实、范围
+  或风险发生变化时重新确认。
 
 ## GitHub、PR、CI 和 Review
 
 目标仓库是 `byrdocs/byrdocs-archive`，base 是 `master`。所有 GitHub 写操作都在专用 absolute workspace 的干净 `archive/` checkout 中进行。
+
+进入本节前再次检查：源文件内容和类型已经检查；语义与精确查重结论已解决；canonical
+MD5、key、扩展名和 metadata `id` 一致；字段事实与 warning 已处理；实际变更只包含目标
+metadata；任何外部写入都在用户授权范围内。任一项不成立时不得用 draft PR 或 CI 代替。
 
 ### 身份、fork 和 base
 
@@ -195,7 +228,9 @@ gh api user --jq .login
 gh repo view byrdocs/byrdocs-archive --json defaultBranchRef,nameWithOwner
 ```
 
-没有安装 `gh` 时，停止 GitHub 写操作，向用户提供安装 GitHub CLI 后继续，或由用户自行贡献 metadata 的选择。GitHub 未登录时，引导用户完成 `gh auth login`。没有 fork 时，询问用户是否允许创建：
+没有安装 `gh` 时，停止 GitHub 写操作，让用户选择自行安装 GitHub CLI 后继续，或自行
+贡献 metadata；Agent 不代为安装。GitHub 未登录时，引导用户完成 `gh auth login`。没有
+fork 时，询问用户是否允许创建：
 
 ```bash
 gh repo fork byrdocs/byrdocs-archive --clone=false

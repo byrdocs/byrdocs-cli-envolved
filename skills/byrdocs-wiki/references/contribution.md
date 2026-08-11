@@ -21,6 +21,22 @@
 
 README 和博客用于解释环境准备、VS Code 插件、预览和人工操作；内容编辑规则仍以官方编辑指南为准。其中的 `git add .`、宽泛 `git pull`、拼写错误或旧目录示例不直接转化为 Agent 规范。
 
+## 执行顺序和阶段门禁
+
+主 `SKILL.md` 的来源、资源、工具、授权和范围门禁在所有阶段持续生效。按下列顺序推进；
+缺少证据时保留本地产物并暂停，不用后续 lint、build、draft PR 或事后披露替代前置检查。
+
+| 阶段 | 进入下一阶段前必须成立 |
+| --- | --- |
+| 路由 | 已确认是维基内容贡献，并确定新录入、修改、补答案、纠错或恢复任务 |
+| 准备 | 当前规则和仓库指令已读取；目标 checkout、页面、来源及恢复证据已确定 |
+| 查重 | 同一考试页面和 open PR 已检查，目录及复用决定没有歧义 |
+| 来源 | 文字、公式、答案和所有必要资源已逐项核对；不确定性已保留 |
+| 编辑 | 页面基于当前模板或目标文件，diff 只覆盖授权范围 |
+| 验证 | 内容检查和当前 workflow 要求均已执行，失败与缺项已有明确处理决定 |
+| 发布 | 身份、fork、branch、已有 PR、精确 diff 和用户授权已重新核对 |
+| 收尾 | PR、CI、review 或明确阻塞状态与真实远端一致 |
+
 ## 上游和实时仓库索引
 
 先完整读取 `references/upstream.md`，按文档 ID 获取当前官方说明。获得目标 checkout 后，
@@ -40,7 +56,7 @@ schema、lint、check 或 build 失败；此时先记录命令和诊断，再只
 | 任务对象 | 所有实际贡献 | 仓库根目录当前存在的 `CLAUDE.md`、`AGENTS.md` 等指令文件 | 遵守仓库级指令及其作用域 |
 | 任务对象 | 新建页面 | `templates/exam-page.mdx` | 使用当前页面骨架，不从 Skill 自造模板 |
 | 任务对象 | 修改已有页面 | 目标 `exams/<exam-dir>/index.mdx`、同目录资源和相关 Git 历史 | 读取真正要修改的内容和依据 |
-| 任务对象 | 安装或本地验证 | `package.json`、当前 lockfile、`.github/workflows/pr-checks.yml` | 执行当前环境和验证命令，不从中推导编辑规范 |
+| 任务对象 | 本地验证 | `package.json`、当前 lockfile、`.github/workflows/pr-checks.yml` | 确定当前环境和验证命令；不从中推导编辑规范，也不据此自动安装或修改依赖 |
 | 任务对象 | 排查 review 自动化 | `.github/workflows/claude-review.yml`、`.github/workflows/claude.yml` | 仅在对应 Action 或触发流程异常时读取 |
 | 兜底参考 | 已记录字段、枚举、格式或目录校验的文档缺口，或相关校验实际失败 | `src/utils/examFrontmatter.ts`、`src/utils/examDirectories.ts`；必要时从 `src/content.config.ts` 跟随 import | 仅补足缺失的机器校验细节或解释失败 |
 | 兜底参考 | 已记录本次组件属性或行为的文档缺口，或相关校验实际失败 | `src/components/exam.ts` 和对应的 `src/components/exam/<组件>.astro` | 仅补足缺失的导出或 props，或解释失败 |
@@ -143,7 +159,10 @@ schema、lint、check 或 build 失败；此时先记录命令和诊断，再只
 ### 资源
 
 - 资源目录、命名、引用和组件属性遵循 `editing-guide`；每个引用都要验证目标存在。
-- 打开本次新增或修改的所有题图，核对数值、结构、方向、拓扑与题干和答案。Agent 无法查看图片时，改为确认文件名与源文件对应、文件大小合理、来源可靠，并在 PR 不完整项中注明题图未经 Agent 核验。
+- 打开本次使用的所有题图和影响题意的附件，核对数值、文字、结构、方向、拓扑与题干和
+  答案；文件名、大小或来源可靠不能替代内容核验。当前宿主无法查看必要资源时，在
+  commit、push 或 PR 前暂停，请用户提供可检查形式或完成核验。只有用户明确接受精确的
+  未核验范围及风险时，才可继续创建 draft PR，并在 PR 中如实披露。
 - 不执行 SVG、ZIP、Office 附件中的脚本或宏，不因图像“优化”改变题目条件。
 
 ### 答案和回忆题
@@ -178,14 +197,20 @@ pnpm build
 
 命令变化时以当前 CI 为准。失败要区分本次内容错误、仓库基线和环境问题，不删内容或绕过校验伪造成功。
 
-`pnpm build` 因环境限制（内存不足 OOM、磁盘空间等）失败时，若 `pnpm check` 和 `pnpm lint` 均已通过，在验证结果中如实报告环境限制，不阻塞贡献流程。
+使用能保留原始退出码和完整必要诊断的方式运行验证；不要把命令接到截断输出的管道后，
+再把管道成功误报为验证成功。缺少依赖时不自动运行 `pnpm install`、`npm install` 或其他
+安装命令，先说明缺口并询问用户。
+
+验证因环境限制（如内存或磁盘空间）失败时，可以继续完善本地内容，但不得把它报告为
+通过。外部发布只有在项目当前规则明确允许，或用户已看到失败阶段、诊断和风险并明确
+接受该未验证范围时才能继续；draft PR 本身不构成豁免。
 
 GitHub 写入前向用户说明：
 
 - 目标试卷和仓库相对路径；
 - 新增/修改的题目、答案和资源；
 - frontmatter 事实来源；
-- 回忆内容、缺题、模糊图片和未核验答案；
+- 回忆内容、缺题以及尚待用户决定的来源或资源冲突；
 - lint/check/build 实际结果；
 - 将创建新 draft PR 还是更新已有 PR。
 
@@ -194,6 +219,10 @@ GitHub 写入前向用户说明：
 ## GitHub、PR、CI 和 Review
 
 目标仓库是 `byrdocs/byrdocs-neowiki`，base 使用当前实际默认分支。
+
+进入本节前再次检查：页面与必要资源已核对；重复和来源冲突已解决；验证结果及经用户
+接受的未验证范围已记录；实际 diff 只包含目标试卷；任何外部写入都在用户授权范围内。
+任一项不成立时不得用 draft PR 或 CI 代替。
 
 ### 身份、fork 和 base
 
@@ -233,7 +262,7 @@ git fetch upstream master
 
 ```bash
 gh pr list --repo byrdocs/byrdocs-neowiki \
-  --author “@me” --state open --limit 100 \
+  --author "@me" --state open --limit 100 \
   --json number,url,isDraft,headRepositoryOwner,headRefName,baseRefName
 ```
 
@@ -263,7 +292,7 @@ gh pr list --repo byrdocs/byrdocs-neowiki \
 分支名确定一次并通过校验，不直接拼接未经规范化的用户标题：
 
 ```bash
-git check-ref-format --branch “<branch>”
+git check-ref-format --branch "<branch>"
 ```
 
 确认后从最新 upstream/master 创建：
@@ -298,7 +327,7 @@ PR body 写入独立文件，使用 `--body-file` 避免 shell 转义问题。bo
 - 试卷：学年、学期、科目、阶段
 - 来源：源仓库/文件及题图出处
 - 内容摘要：题型、数量、答案覆盖情况
-- 不完整项：学院未知、答案未核验、题图未经 Agent 核验等
+- 经用户明确接受的未完成项、未验证范围及原因
 - 验证结果：lint/check/build 实际输出
 - 查重情况：已有页面和 open PR 的检查结果
 - 尾注：`*由 [BYR Docs Wiki Skill](https://github.com/byrdocs/byrdocs-cli-envolved) 创建*`
@@ -320,7 +349,7 @@ gh pr create \
   --base master \
   --head <user>:<branch> \
   --draft \
-  --title “<简洁标题>” \
+  --title "<简洁标题>" \
   --body-file <pr-body-file>
 ```
 

@@ -25,17 +25,48 @@ metadata 模板、校验和预览；Agent 负责结构化筛选、理解资料�
 停止 archive 流程并转到 `byrdocs-wiki`。如果维基贡献只需要本 Skill 搜索、下载或确认
 来源 MD5，仍然由 `byrdocs-wiki` 负责总流程，本 Skill 只完成 archive 的子步骤。
 
-## 基本原则
+## 执行限制
 
-- 本 Skill 的 Agent/CLI 贡献流程不依赖 BYR Docs Publish。执行本流程时，不要混用 `byrdocs-publish` 的 token、内部 API 或中间状态；用户选择官方网页贡献流程时，按其当前指南执行，不把网页状态推断为 CLI 状态。
-- 调用 BYRDocs CLI 时，只要命令支持就必须加 `--json`。只解析 stdout 中的 JSON object；stderr 只作为日志和进度。
-- 不要索要、接触或保存校园网密码。只展示 `auth login --json` 返回的登录链接，让用户自行在浏览器完成认证。
-- 不要读取或泄露 token、cookie、登录轮询凭证、本机隐私路径、JWT claims、学号或 GitHub access token。
-- metadata 事实只能来自资料内容、当前 BYRDocs 文档/schema、可靠查询、搜索结果或用户确认。未知必填信息询问用户；允许省略的未知可选字段省略，不要猜。
-- 不假设用户机器上存在任何 BYRDocs 源码目录。先读取 `references/upstream.md`，按文档 ID 在线解析贡献所需规则；只有真正准备 GitHub PR 时，才按 contribution reference 在专用 workspace 中创建临时 archive checkout。
-- 无法读取 `references/upstream.md` 或解析本步骤所需的权威来源时，在当前回复中说明不可用的文档 ID 并暂停依赖步骤；不得转向 Agent memory、旧快照、未在索引声明的实现或同类资料来补全当前规则。
-- 用户可控的路径、标题、课程名和 PR body 路径必须作为独立 shell 参数或正确引用的参数传入。branch 不得直接拼入未经规范化的标题或其他用户输入；贡献流程按 reference 确定并校验一次 `<branch>`，后续命令始终复用该值。
-- 不直接调用主站内部 API；搜索使用公开 MCP/HTTP API，其他动作使用 BYRDocs CLI 和 `gh`。
+以下门禁优先于后文示例和命令。不能满足时，保留已有产物并暂停，不自行揣测。
+
+1. **目标门禁**：先确定任务是搜索、下载、主站文件贡献，还是维基录题；目标含糊时只做
+   不会改变状态的检查，然后询问用户。
+2. **规则门禁**：按 `references/upstream.md` 解析当前步骤需要的权威文档。文档不可用时
+   说明缺失的文档 ID 并暂停，不用 Agent memory、旧快照或未索引实现补全规则。
+3. **事实门禁**：metadata 和贡献说明中的事实只能来自资料、当前文档/schema、可靠查询、
+   搜索结果或用户确认。未知必填项询问用户；允许省略的未知可选项省略。
+4. **工具门禁**：不自动安装、升级或替换系统级、全局或项目依赖。缺少命令或文件处理
+   能力时，先使用现有工具；仍无法完成必要检查时说明缺口并询问用户。
+5. **授权门禁**：外部写入必须属于用户明确请求，或已在当前任务中单独确认。询问确认后
+   结束当前回复，不能在同一回复中继续执行目标动作。
+6. **范围门禁**：上传、覆盖文件、commit、push、创建或更新 PR 前，重新核对目标、事实、
+   不确定项和实际变更范围。构建或 schema 通过只证明机器约束通过，不证明内容或政策正确。
+
+### 用户授权的范围
+
+| 动作 | 处理方式 |
+| --- | --- |
+| 读取、搜索、查重、创建专用临时 workspace、生成本地草稿、校验和预览 | 可直接执行 |
+| 用户已明确要求的 upload、commit、push、创建或更新 draft PR | 不逐步重复确认；目标或风险变化时重新确认 |
+| 未明确要求的外部写入 | 说明动作、精确目标、影响和原因，只问一个确认问题并暂停 |
+| 创建 fork、安装依赖、覆盖已有文件或远端分支、发布存在已知冲突或缺项的贡献 | 始终单独确认 |
+| force push、删除远端内容、扩大到无关文件、标记 ready for review | 只有用户针对精确目标明确要求时才执行 |
+
+“贡献一下”“继续处理”不自动授权两种贡献路径或所有外部写入。授权只适用于已说明的动作、
+目标和范围；来源冲突、重复候选、目标变化、远端状态变化或 diff 扩大时重新确认。非交互环境
+无法取得必要确认时，报告 `CONFIRMATION_REQUIRED` 并停止目标动作。
+
+### 工具、身份和数据边界
+
+- 本流程不依赖 BYR Docs Publish，不混用 `byrdocs-publish` 的 token、内部 API 或中间状态。
+- BYRDocs CLI 命令支持时使用 `--json`；只把 stdout JSON 作为机器契约，stderr 只作日志。
+- 不索要校园网密码，不把 token、cookie、登录轮询凭证、JWT claims、学号、GitHub
+  access token、本机隐私路径或来源文件的二进制、base64 内容倾倒到回复、PR 或调试输出。
+- 不直接调用主站内部 API；搜索使用公开 MCP/HTTP API，其他主站动作使用 BYRDocs CLI，
+  GitHub 动作使用 `gh`。
+- 用户可控路径和文本必须作为独立参数或正确引用；branch 只使用经过规范化和校验的固定值。
+- 不假设本机已有 BYRDocs 源码 checkout。只有进入 metadata PR 阶段时，才在专用 workspace
+  准备 archive checkout。
 
 ## 任务路由
 
@@ -60,27 +91,30 @@ metadata 模板、校验和预览；Agent 负责结构化筛选、理解资料�
 
 ## 按需准备 CLI
 
-只有 CLI fallback 搜索、下载或贡献需要准备 CLI。先选择一种调用形式，并在整个任务中保持同一 argv 前缀：
+只有 CLI fallback 搜索、下载或贡献需要准备 CLI。先检查现有全局命令；可用时固定使用：
 
 ```bash
 byrdocs
 ```
 
-系统没有全局命令时使用：
+系统没有全局命令时，不要自行下载或安装。向用户说明缺少 CLI，并让用户选择临时使用：
 
 ```bash
 npx -y @byrdocs/cli@latest
 ```
 
-如果使用 `npx -y @byrdocs/cli@latest`，后续示例中的 `byrdocs` 都替换为这三个 argv 片段。多词命令是 argv 序列；不要把它存进单个 shell 字符串变量后直接执行，也不要在同一任务中混用全局 CLI、项目内 CLI 和 `npx`。
+或由用户自行长期安装。获得选择后固定一种 argv 前缀；如果使用
+`npx -y @byrdocs/cli@latest`，后续示例中的 `byrdocs` 都替换为这三个 argv 片段。多词命令
+是 argv 序列，不把它存进单个 shell 字符串变量后直接执行，也不在同一任务中混用全局
+CLI、项目内 CLI 和 `npx`。
 
-如果用户需要长期安装，可建议：
+长期安装只作为给用户的建议，确认后才执行安装，不由 Agent 未经确认执行：
 
 ```bash
 npm install -g @byrdocs/cli
 ```
 
-按任务最小验证实际命令能力：
+只按当前任务验证必要命令能力；不因为后续可能用到就提前运行全部检查：
 
 ```bash
 byrdocs help --json
